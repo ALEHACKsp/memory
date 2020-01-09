@@ -3,9 +3,6 @@
 #include <thread>
 #include <cstdint>
 
-//Possible issues:
-// - When resizing the shared memory, some hooked function may get called and they might jump to an invalid address 
-
 #ifdef UNICODE
 	#define lstrstr wcsstr
 #else
@@ -711,6 +708,7 @@ uintptr_t MemEx::GetModuleBase(const DWORD dwProcessId, const TCHAR* const modul
 	return mi.base;
 }
 
+//https://github.com/Nomade040/length-disassembler
 size_t MemEx::GetInstructionLength(const void* const address)
 {
 	size_t offset = 0;

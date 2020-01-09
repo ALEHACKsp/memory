@@ -450,6 +450,7 @@ uintptr_t MemIn::GetModuleBase(const DWORD dwProcessId, const TCHAR* const modul
 	return mi.base;
 }
 
+//https://github.com/Nomade040/length-disassembler
 size_t MemIn::GetInstructionLength(const void* const address)
 {
 	size_t offset = 0;
