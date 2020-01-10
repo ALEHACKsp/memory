@@ -1,6 +1,8 @@
 # Mem
 A memory library for Windows in C++.
 
+There is an internal (MemIn.h", "MemIn.cpp") and an external ("MemEx.h", "MemEx.cpp") version, both use similar interfaces so you can easily port an external application to internal and vice-versa.
+
 # Features
 **[EX]** = Function is only available on the external version
  - x86-32 & x86-64 support
