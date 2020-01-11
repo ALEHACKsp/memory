@@ -324,6 +324,10 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 
 	memcpy(reinterpret_cast<void*>(buffer), reinterpret_cast<const void*>(address), numReplacedBytes);
 
+	DWORD tmp;
+	if (!VirtualProtect(reinterpret_cast<LPVOID>(buffer), numReplacedBytes + HOOK_JUMP_SIZE, PAGE_EXECUTE_READWRITE, &tmp))
+		return false;
+
 	//Place jump from our hook back to the function & from function to our hook
 #ifdef _WIN64
 	uint8_t jump[12] = { 0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xE0 };
@@ -340,7 +344,7 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 	memcpy(reinterpret_cast<void*>(buffer + numReplacedBytes), jump, sizeof(jump));
 
 	*reinterpret_cast<ptrdiff_t*>(jump + 1) = reinterpret_cast<ptrdiff_t>(callback) - static_cast<ptrdiff_t>(address + 5);
-	memcpy(reinterpret_cast<void*>(address + numReplacedBytes), jump, sizeof(jump));
+	memcpy(reinterpret_cast<void*>(address), jump, sizeof(jump));
 #endif	
 #endif
 
