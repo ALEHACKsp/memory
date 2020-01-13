@@ -77,7 +77,8 @@ MemIn::ProtectRegion::~ProtectRegion() { VirtualProtect(reinterpret_cast<LPVOID>
 
 bool MemIn::Read(const uintptr_t address, void* const buffer, const SIZE_T size, const bool protect)
 {
-	if (!ProtectRegion(address, size, protect).Success())
+	ProtectRegion pr(address, size, protect);
+	if (!pr.Success())
 		return false;
 
 	memcpy(buffer, reinterpret_cast<const void*>(address), size);
@@ -87,7 +88,8 @@ bool MemIn::Read(const uintptr_t address, void* const buffer, const SIZE_T size,
 
 bool MemIn::Write(const uintptr_t address, const void* const buffer, const SIZE_T size, const bool protect)
 {
-	if (!ProtectRegion(address, size, protect).Success())
+	ProtectRegion pr(address, size, protect);
+	if (!pr.Success())
 		return false;
 
 	memcpy(reinterpret_cast<void*>(address), buffer, size);
@@ -125,7 +127,8 @@ bool MemIn::Restore(const uintptr_t address)
 
 bool MemIn::Copy(const uintptr_t destinationAddress, const uintptr_t sourceAddress, const size_t size)
 {
-	if (!ProtectRegion(destinationAddress, size).Success() || !ProtectRegion(sourceAddress, size).Success())
+	ProtectRegion prd(destinationAddress, size), prs(sourceAddress, size);
+	if (!prd.Success() || !prs.Success())
 		return false;
 
 	return memcpy(reinterpret_cast<void*>(destinationAddress), reinterpret_cast<const void*>(sourceAddress), size);
@@ -133,7 +136,8 @@ bool MemIn::Copy(const uintptr_t destinationAddress, const uintptr_t sourceAddre
 
 bool MemIn::Set(const uintptr_t address, const int value, const size_t size)
 {
-	if (!ProtectRegion(address, size).Success())
+	ProtectRegion pr(address, size);
+	if (!pr.Success())
 		return false;
 
 	return memset(reinterpret_cast<void*>(address), value, size);
@@ -141,7 +145,8 @@ bool MemIn::Set(const uintptr_t address, const int value, const size_t size)
 
 bool MemIn::Compare(const uintptr_t address1, const uintptr_t address2, const size_t size)
 {
-	if (!ProtectRegion(address1, size).Success() || !ProtectRegion(address2, size).Success())
+	ProtectRegion pr1(address1, size), pr2(address2, size);
+	if (!pr1.Success() || !pr2.Success())
 		return false;
 
 	return memcmp(reinterpret_cast<const void*>(address1), reinterpret_cast<const void*>(address2), size) == 0;
@@ -290,7 +295,8 @@ uintptr_t MemIn::ReadMultiLevelPointer(uintptr_t base, const std::vector<uint32_
 
 bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline)
 {
-	if(!ProtectRegion(address, HOOK_MAX_NUM_REPLACED_BYTES).Success())
+	ProtectRegion pr(address, HOOK_MAX_NUM_REPLACED_BYTES);
+	if(!pr.Success())
 		return false;
 
 	size_t numReplacedBytes = 0;
@@ -360,10 +366,16 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 
 bool MemIn::Unhook(const uintptr_t address)
 {
+	ProtectRegion pr(address, m_Hooks[address].trampolineSize - HOOK_JUMP_SIZE);
+	if (!pr.Success())
+		return false;
+
 	memcpy(reinterpret_cast<void*>(address), reinterpret_cast<const void*>(m_Hooks[address].trampoline), m_Hooks[address].trampolineSize - HOOK_JUMP_SIZE);
 	
 #if USE_CODE_CAVE_AS_MEMORY
 	memset(reinterpret_cast<void*>(m_Hooks[address].trampoline), 0xCC, static_cast<size_t>(m_Hooks[address].trampolineSize));
+#else
+	delete[] reinterpret_cast<uint8_t*>(m_Hooks[address].trampoline);
 #endif
 
 	m_Hooks.erase(address);
