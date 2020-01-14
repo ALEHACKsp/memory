@@ -13,8 +13,6 @@
 #include <memory>
 
 #define ENABLE_PATTERN_SCAN_MULTITHREADING 1
-
-//Only works for function hooking(in the future, extend it to function calling)
 #define USE_CODE_CAVE_AS_MEMORY 1
 
 //Little trick. The x64 compile version of visual studio does not support inline assembly
@@ -83,7 +81,7 @@ class MemEx
 	uint8_t* m_thisMappedView; // Starting address of the mapped view on this process.
 	uint8_t* m_targetMappedView; // Starting address of the mapped view on the target process.
 
-	uint8_t m_numPages;
+	size_t m_numPages;
 
 	//Event objects to perform synchronization with our thread on the target process.
 	HANDLE m_hEvent1, m_hEventDuplicate1;
@@ -189,7 +187,7 @@ public:
 
 	uintptr_t FindCodeCave(const size_t size, uintptr_t start = 0, const uintptr_t end = -1, const uint8_t nullByte = static_cast<uint8_t>(0x00)) const;
 
-	HANDLE AllocateSharedMemory(const DWORD size, PVOID& localView, PVOID& remoteView) const;
+	HANDLE AllocateSharedMemory(const size_t size, PVOID& localView, PVOID& remoteView) const;
 
 	bool FreeSharedMemory(HANDLE hFileMapping, LPCVOID localView, LPCVOID remoteView) const;
 
@@ -221,7 +219,7 @@ public:
 
 	static DWORD GetPageSize();
 
-	static HANDLE CreateSharedMemory(const DWORD size);
+	static HANDLE CreateSharedMemory(const size_t size);
 
 private:
 	void PatternScanImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>& finishCount, const uint8_t* const pattern, const char* const mask, uintptr_t start = 0, const uintptr_t end = -1) const;
@@ -230,7 +228,7 @@ private:
 
 	template<typename T> Arg GetArgument(T& t) { return Arg(&t, sizeof(t), true, true); }
 	Arg GetArgument(const char t[]) { return Arg(t, strlen(t) + 1, true, false, true); }
-	Arg GetArgument(const wchar_t t[]) { return Arg(t, (lstrlenW(t) + 1) * 2, true, false, true); }
+	Arg GetArgument(const wchar_t t[]) { return Arg(t, (static_cast<size_t>(lstrlenW(t)) + 1) * 2, true, false, true); }
 	Arg GetArgument(Arg& t) { return t; }
 
 #ifdef _WIN64

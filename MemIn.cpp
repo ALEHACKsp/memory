@@ -213,7 +213,7 @@ uintptr_t MemIn::PatternScan(const char* const pattern, const char* const mask, 
 
 	std::atomic<uintptr_t> address = 0; std::atomic<size_t> finishCount = 0;
 	for (unsigned int i = 0; i < numThreads; i++)
-		std::thread(&MemIn::PatternScanImpl, std::ref(address), std::ref(finishCount), reinterpret_cast<const uint8_t* const>(pattern), mask, start + chunkSize * i, start + chunkSize * (i + 1)).detach();
+		std::thread(&MemIn::PatternScanImpl, std::ref(address), std::ref(finishCount), reinterpret_cast<const uint8_t* const>(pattern), mask, start + chunkSize * i, start + chunkSize * (static_cast<size_t>(i) + 1)).detach();
 
 	while (finishCount.load() != numThreads)
 		Sleep(1);
@@ -313,17 +313,17 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 
 #if USE_CODE_CAVE_AS_MEMORY
 	DWORD oldProtect2;
-	if (!(buffer = FindCodeCave(numReplacedBytes + HOOK_JUMP_SIZE, address - 0x7FFFFFFB, address + 0x7FFFFFFF)) || !VirtualProtect(reinterpret_cast<LPVOID>(bufferAddress), numReplacedBytes + HOOK_JUMP_SIZE, PAGE_EXECUTE_READWRITE, &oldProtect2))
+	if (!(buffer = FindCodeCave(numReplacedBytes + HOOK_JUMP_SIZE, address - 0x7FFFFFFB, address + 0x7FFFFFFF)) || !VirtualProtect(reinterpret_cast<LPVOID>(buffer), numReplacedBytes + HOOK_JUMP_SIZE, PAGE_EXECUTE_READWRITE, &oldProtect2))
 		return false;
 
-	memcpy(reinterpret_cast<void*>(bufferAddress), reinterpret_cast<const void*>(address), numReplacedBytes);
-	*reinterpret_cast<uint8_t*>(bufferAddress + numReplacedBytes) = static_cast<uint8_t>(0xE9);
-	*reinterpret_cast<int32_t*>(bufferAddress + numReplacedBytes + 1) = static_cast<int32_t>(static_cast<ptrdiff_t>(address) - static_cast<ptrdiff_t>(bufferAddress + numReplacedBytes + HOOK_JUMP_SIZE));
+	memcpy(reinterpret_cast<void*>(buffer), reinterpret_cast<const void*>(address), numReplacedBytes);
+	*reinterpret_cast<uint8_t*>(buffer + numReplacedBytes) = static_cast<uint8_t>(0xE9);
+	*reinterpret_cast<int32_t*>(buffer + numReplacedBytes + 1) = static_cast<int32_t>(static_cast<ptrdiff_t>(address) - static_cast<ptrdiff_t>(buffer + numReplacedBytes + HOOK_JUMP_SIZE));
 	
 	*reinterpret_cast<uint8_t*>(address + numReplacedBytes) = static_cast<uint8_t>(0xE9);
 	*reinterpret_cast<int32_t*>(address + numReplacedBytes + 1) = static_cast<int32_t>(reinterpret_cast<ptrdiff_t>(callback) - static_cast<ptrdiff_t>(address + numReplacedBytes + HOOK_JUMP_SIZE));
 	
-	VirtualProtect(reinterpret_cast<LPVOID>(bufferAddress), numReplacedBytes + HOOK_JUMP_SIZE, oldProtect2, &oldProtect2);
+	VirtualProtect(reinterpret_cast<LPVOID>(buffer), numReplacedBytes + HOOK_JUMP_SIZE, oldProtect2, &oldProtect2);
 #else
 	if(!(buffer = reinterpret_cast<uintptr_t>(new uint8_t[numReplacedBytes + HOOK_JUMP_SIZE])))
 		return false;

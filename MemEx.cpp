@@ -439,7 +439,7 @@ bool MemEx::Hook(const uintptr_t address, const void* const callback, const size
 			uint8_t* nextAddress = m_thisMappedView + m_numPages * 4096;
 			for (auto& hook : oldHooks)
 			{
-				memcpy(nextAddress - (hook.second.callbackSize + hook.second.trampolineSize), reinterpret_cast<const void*>(hook.first), hook.second.callbackSize + hook.second.trampolineSize);
+				memcpy(nextAddress - (static_cast<size_t>(hook.second.callbackSize) + hook.second.trampolineSize), reinterpret_cast<const void*>(hook.first), static_cast<size_t>(hook.second.callbackSize) + hook.second.trampolineSize);
 				m_Hooks[reinterpret_cast<uintptr_t>(nextAddress)] = hook.second;
 
 
@@ -451,7 +451,7 @@ bool MemEx::Hook(const uintptr_t address, const void* const callback, const size
 				Write<ptrdiff_t>(hook.second.address + hook.second.trampolineSize - 5, reinterpret_cast<ptrdiff_t>(nextAddress) - static_cast<ptrdiff_t>(hook.second.address + hook.second.trampolineSize), true);
 #endif
 
-				nextAddress += hook.second.callbackSize + hook.second.trampolineSize;
+				nextAddress += static_cast<size_t>(hook.second.callbackSize) + hook.second.trampolineSize;
 			}
 
 			buffer = reinterpret_cast<uintptr_t>(nextAddress);
@@ -505,7 +505,7 @@ bool MemEx::Unhook(const uintptr_t address)
 			Write(address, reinterpret_cast<const void*>(hook.first + hook.second.callbackSize), hook.second.trampolineSize - HOOK_JUMP_SIZE, true);
 
 #if USE_CODE_CAVE_AS_MEMORY
-			memset(reinterpret_cast<void*>(hook.first), 0xCC, static_cast<size_t>(hook.second.callbackSize + hook.second.trampolineSize));
+			memset(reinterpret_cast<void*>(hook.first), 0xCC, static_cast<size_t>(static_cast<size_t>(hook.second.callbackSize) + hook.second.trampolineSize));
 #endif
 
 			m_Hooks.erase(hook.first);
@@ -584,7 +584,7 @@ PVOID MemEx::MapRemoteViewOfFile(const HANDLE hFileMapping) const
 		PVOID targetAddress = nullptr;
 
 #ifdef _WIN64
-		PLACE1(0xB9); PLACE4(m_hFileMappingDuplicate); // mov rcx, m_hFileMappingDuplicate
+		PLACE1(0xB9); PLACE4(reinterpret_cast<uintptr_t>(m_hFileMappingDuplicate)); // mov ecx, m_hFileMappingDuplicate
 		PLACE1(0xBA); PLACE4(FILE_MAP_ALL_ACCESS | FILE_MAP_EXECUTE); //mov edx, FILE_MAP_ALL_ACCESS
 		PLACE4(0x45C03345); PLACE2(0xC933); // (xor r8d, r8d) & (xor r9d, r9d)
 		PUSH1(0);
@@ -592,7 +592,7 @@ PVOID MemEx::MapRemoteViewOfFile(const HANDLE hFileMapping) const
 
 		PLACE1(0x50);
 
-		PLACE1(0xB9); PLACE4(hProcessDuplicate);
+		PLACE1(0xB9); PLACE4(reinterpret_cast<uintptr_t>(hProcessDuplicate));
 		PLACE1(0xBA); PLACE8(&m_targetMappedView);
 		PLACE1(0x4C); PLACE2(0xC48B); // mov r8, rax
 		PLACE2(0xB941); PLACE4(sizeof(uintptr_t)); // mov r9d, sizeof(HANDLE)
@@ -823,9 +823,9 @@ DWORD MemEx::GetPageSize()
 	return si.dwPageSize;
 }
 
-HANDLE MemEx::CreateSharedMemory(const DWORD size) { return CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_EXECUTE_READWRITE, 0, size, nullptr); }
+HANDLE MemEx::CreateSharedMemory(const size_t size) { return CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_EXECUTE_READWRITE, static_cast<DWORD>(static_cast<uint64_t>(size) >> 32), static_cast<DWORD>(size & 0xFFFFFFFF), nullptr); }
 
-HANDLE MemEx::AllocateSharedMemory(const DWORD size, PVOID& localView, PVOID& remoteView) const
+HANDLE MemEx::AllocateSharedMemory(const size_t size, PVOID& localView, PVOID& remoteView) const
 {
 	HANDLE hFileMapping = CreateSharedMemory(size);
 	if (hFileMapping)
@@ -885,7 +885,7 @@ void* MemEx::CallImpl(const CConv cConv, const bool isReturnFloat, const bool is
 	size_t returnOffset = 0;
 #ifdef _WIN64
 	uint8_t* buffer = m_thisMappedView + 35;
-	size_t offset = 35 + 10 + 12 + 5 + ((isReturnFloat || isReturnDouble) ? 6 : 4) + (returnSize > 8 ? 7 - 3 : 0);
+	size_t offset = static_cast<size_t>(62) + (isReturnFloat || isReturnDouble) ? 6 : 4 + returnSize > 8 ? 4 : 0;
 
 	//Calculate offset(arguments)
 	size_t paramCount = 0;
@@ -1102,8 +1102,8 @@ bool MemEx::SetupRemoteThread()
 #ifdef _WIN64
 	//Theoratically the size of a HANDLE is 8 bytes but I've never seen one use more than 4 bytes.
 	PLACE4(0x28EC8348); //Allocate shadow space & perform stack alignment ; sub rsp, 0x28
-	PLACE1(0xB9); PLACE4(m_hEventDuplicate2); // mov edx, m_hEventDuplicate2
-	PLACE1(0xBA); PLACE4(m_hEventDuplicate1); // mov ecx, m_hEventDuplicate1
+	PLACE1(0xB9); PLACE4(reinterpret_cast<uintptr_t>(m_hEventDuplicate2)); // mov edx, m_hEventDuplicate2
+	PLACE1(0xBA); PLACE4(reinterpret_cast<uintptr_t>(m_hEventDuplicate1)); // mov ecx, m_hEventDuplicate1
 	PLACE2(0xB841); PLACE4(INFINITE); // mov r8d, INFINITE
 	PLACE1(0x45); PLACE2(0xC933); // xor r9d, r9d
 	CALL_ABSOLUTE(SignalObjectAndWait);

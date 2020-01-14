@@ -3,8 +3,8 @@
 #ifndef MEMIN_H
 #define MEMIN_H
 
-#define ENABLE_PATTERN_SCAN_MULTITHREADING 0
-#define USE_CODE_CAVE_AS_MEMORY 0
+#define ENABLE_PATTERN_SCAN_MULTITHREADING 1
+#define USE_CODE_CAVE_AS_MEMORY 1
 
 #include <Windows.h>
 #include <memory>
