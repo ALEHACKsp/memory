@@ -14,6 +14,11 @@
 #include <atomic>
 #include <TlHelp32.h>
 
+//CPU STATES(for use in the saveCpuStateMask parameter on the Hook() function)
+#define GPR 0x01
+#define FLAGS 0x02
+#define XMMX 0x04
+
 class MemIn
 {
 	class ProtectRegion
@@ -80,7 +85,7 @@ public:
 
 	static uintptr_t ReadMultiLevelPointer(const uintptr_t base, const std::vector<uint32_t>& offsets);
 
-	static bool Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline = nullptr);
+	static bool Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0);
 
 	static bool Unhook(const uintptr_t address);
 

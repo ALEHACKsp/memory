@@ -13,7 +13,7 @@
 #define PLACE1(value) *buffer++ = static_cast<uint8_t>(value)
 #define PLACE2(value) PLACE(uint16_t, value)
 #define PLACE4(value) PLACE(uint32_t, value)
-#define PLACE8(value) PLACE(uint64_t, value);
+#define PLACE8(value) PLACE(uint64_t, value)
 #define PUSH1(value) PLACE1(0x6A); PLACE(uint8_t, value)
 #define PUSH4(value) PLACE1(0x68); PLACE(uint32_t, value)
 
@@ -352,7 +352,7 @@ uintptr_t MemEx::ReadMultiLevelPointer(uintptr_t base, const std::vector<uint32_
 }
 
 #ifndef _WIN64
-bool MemEx::Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline)
+bool MemEx::Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline, const DWORD saveCpuStateMask)
 {
 	size_t size = 0;
 	constexpr uint8_t hookMark[12] = { 0xD6, 0xD6, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0xD6, 0xD6 };
@@ -361,11 +361,11 @@ bool MemEx::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 	while (memcmp(tmp, hookMark, sizeof(hookMark)) != 0)
 		tmp++;
 
-	return Hook(address, callback, static_cast<const size_t>(reinterpret_cast<ptrdiff_t>(tmp) - reinterpret_cast<ptrdiff_t>(callback)), trampoline);
+	return Hook(address, callback, static_cast<const size_t>(reinterpret_cast<ptrdiff_t>(tmp) - reinterpret_cast<ptrdiff_t>(callback)), trampoline, saveCpuStateMask);
 }
 #endif
 
-bool MemEx::Hook(const uintptr_t address, const void* const callback, const size_t callbackSize, uintptr_t* const trampoline)
+bool MemEx::Hook(const uintptr_t address, const void* const callback, const size_t callbackSize, uintptr_t* const trampoline, const DWORD saveCpuStateMask)
 {
 	uint8_t originalCode[HOOK_MAX_NUM_REPLACED_BYTES];
 	if (!m_hProcess || !Read(address, originalCode, sizeof(originalCode)))
@@ -377,52 +377,117 @@ bool MemEx::Hook(const uintptr_t address, const void* const callback, const size
 
 	const size_t trampolineSize = numReplacedBytes + HOOK_JUMP_SIZE;
 
-	uintptr_t buffer = NULL;
-	const size_t bufferSize = callbackSize + trampolineSize;
+#ifdef _WIN64
+	const size_t cpuStateBufferSize = static_cast<size_t>(saveCpuStateMask & FLAGS ? 2 : 0) + (saveCpuStateMask & GPR ? 22 : 0) + (saveCpuStateMask & XMMX ? 78 : 0);
+#else
+	const size_t cpuStateBufferSize = (saveCpuStateMask & FLAGS ? 2 : 0) + (saveCpuStateMask & GPR ? 2 : 0) + (saveCpuStateMask & XMMX ? 76 : 0);
+#endif
+	const size_t bufferSize = cpuStateBufferSize + callbackSize + trampolineSize;
 
-#if USE_CODE_CAVES_AS_MEMORY	
-	DWORD oldProtect;
-	if (!(buffer = FindCodeCave(bufferSize, address - 0x7FFFFFFB, address + 0x7FFFFFFF)) || !VirtualProtectEx(m_hProcess, reinterpret_cast<LPVOID>(buffer), bufferSize, PAGE_EXECUTE_READWRITE, &oldProtect))
+#if USE_CODE_CAVE_AS_MEMORY
+	uintptr_t bufferAddress = NULL;
+	if (!(bufferAddress = FindCodeCave(bufferSize, address - 0x7FFFFFFB, address + 0x7FFFFFFF)))
 		return false;
 
-	if (!Write(buffer, callback, callbackSize) || !Write(buffer + callbackSize, originalCode, numReplacedBytes))
+	auto bufferPtr = std::make_unique<uint8_t[]>(bufferSize);
+	uint8_t* buffer = bufferPtr.get();
+
+	if (saveCpuStateMask & GPR)
+	{
+#ifdef _WIN64
+		PLACE1(0x50); // push rax
+		PLACE1(0x51); // push rcx
+		PLACE1(0x52); // push rdx
+		PLACE2(0x5041); // push r8
+		PLACE2(0x5141); // push r9
+		PLACE2(0x5241); // push 10
+		PLACE2(0x5341); // push r11
+#else
+		PLACE1(0x60); // pushad
+#endif
+	}
+	if (saveCpuStateMask & XMMX)
+	{
+#ifdef _WIN64
+		PLACE4(0x60EC8348); // sub rsp, 0x60
+#else
+		PLACE1(0x83); PLACE2(0x60EC); // sub esp, 0x60
+#endif
+		PLACE1(0xF3); PLACE4(0x246C7F0F); PLACE1(0x50); // movdqu xmmword ptr ss:[r/esp+0x50], xmm5
+		PLACE1(0xF3); PLACE4(0x24647F0F); PLACE1(0x40); // movdqu xmmword ptr ss:[r/esp+0x40], xmm4
+		PLACE1(0xF3); PLACE4(0x245C7F0F); PLACE1(0x30); // movdqu xmmword ptr ss:[r/esp+0x30], xmm3
+		PLACE1(0xF3); PLACE4(0x24547F0F); PLACE1(0x20); // movdqu xmmword ptr ss:[r/esp+0x20], xmm2
+		PLACE1(0xF3); PLACE4(0x244C7F0F); PLACE1(0x10); // movdqu xmmword ptr ss:[r/esp+0x10], xmm1
+		PLACE1(0xF3); PLACE4(0x24047F0F); // movdqu xmmword ptr ss:[r/esp], xmm0
+	}
+	if (saveCpuStateMask & FLAGS)
+		{ PLACE1(0x9C); } // pushfd/q
+
+	memcpy(buffer, callback, callbackSize);
+
+	if (saveCpuStateMask & FLAGS)
+		{ PLACE1(0x9D); } // popfd/q
+	if (saveCpuStateMask & XMMX)
+	{
+		PLACE1(0xF3); PLACE4(0x24046F0F); // movdqu xmm0, xmmword ptr ss:[r/esp]
+		PLACE1(0xF3); PLACE4(0x244C6F0F); PLACE1(0x10); // movdqu xmm1, xmmword ptr ss:[r/esp+0x10]
+		PLACE1(0xF3); PLACE4(0x24546F0F); PLACE1(0x20); // movdqu xmm2, xmmword ptr ss:[r/esp+0x20]
+		PLACE1(0xF3); PLACE4(0x245C6F0F); PLACE1(0x30); // movdqu xmm3, xmmword ptr ss:[r/esp+0x30]
+		PLACE1(0xF3); PLACE4(0x24646F0F); PLACE1(0x40); // movdqu xmm4, xmmword ptr ss:[r/esp+0x40]
+		PLACE1(0xF3); PLACE4(0x246C6F0F); PLACE1(0x50); // movdqu xmm5, xmmword ptr ss:[r/esp+0x50]
+#ifdef _WIN64
+		PLACE4(0x60C48348); // add rsp, 0x60
+#else
+		PLACE1(0x83); PLACE2(0x60C4); // add esp, 0x60
+#endif
+	}
+	if (saveCpuStateMask & GPR)
+	{
+#ifdef _WIN64
+		PLACE2(0x5B41); // pop r11
+		PLACE2(0x5A41); // pop r10
+		PLACE2(0x5941); // pop r9
+		PLACE2(0x5841); // pop r8
+		PLACE1(0x5A); // pop rdx
+		PLACE1(0x59); // pop rcx
+		PLACE1(0x58); // pop rax
+#else
+		PLACE1(0x61); // popad
+#endif
+	}
+	
+	memcpy(buffer + callbackSize, originalCode, numReplacedBytes);
+	buffer += callbackSize + numReplacedBytes;
+
+	PLACE1(0xE9); PLACE4(static_cast<ptrdiff_t>(address + numReplacedBytes) - reinterpret_cast<ptrdiff_t>(buffer + cpuStateBufferSize / 2 + callbackSize + numReplacedBytes + 5));
+
+	PLACE1(0xE9); PLACE4(static_cast<ptrdiff_t>(bufferAddress) - static_cast<ptrdiff_t>(address + 5));
+
+	if (!Write(bufferAddress, buffer, bufferSize, true))
 		return false;
-
-	uint8_t jump[5] = { 0xE9 };
-
-	*reinterpret_cast<int32_t*>(jump + 1) = static_cast<int32_t>(static_cast<ptrdiff_t>(address + numReplacedBytes) - static_cast<ptrdiff_t>(buffer + callbackSize + numReplacedBytes + 5));
-	if (!Write(buffer + callbackSize + numReplacedBytes + 5, jump, 5))
-		return false;
-
-	*reinterpret_cast<int32_t*>(jump + 1) = static_cast<int32_t>(static_cast<ptrdiff_t>(buffer) - static_cast<ptrdiff_t>(address + 5));
-	if (!Write(address, jump, 5))
-		return false;
-
-	VirtualProtectEx(m_hProcess, reinterpret_cast<LPVOID>(buffer), bufferSize3, oldProtect, &oldProtect);
 
 	if (trampoline)
-		*trampoline = buffer + callbackSize;
-
+		*trampoline = bufferAddress + cpuStateBufferSize + callbackSize;
 #else
 	if (!m_hFileMapping && !(m_hFileMapping = AllocateSharedMemory(m_numPages * dwPageSize, reinterpret_cast<PVOID&>(m_thisMappedView), reinterpret_cast<PVOID&>(m_targetMappedView))))
 		return false;
 
-	uintptr_t lastAddress = reinterpret_cast<uintptr_t>(m_thisMappedView + m_numPages * 4096);
+	uintptr_t lastAddress = reinterpret_cast<uintptr_t>(m_thisMappedView + m_numPages * 4096), bufferAddress = NULL;
 	for (auto& hook : m_Hooks)
 	{
 		if (lastAddress - hook.first >= bufferSize)
 		{
-			buffer = lastAddress;
+			bufferAddress = lastAddress;
 			break;
 		}
 
 		lastAddress = hook.first;
 	}
 
-	if (!buffer)
+	if (!bufferAddress)
 	{
 		if (static_cast<ptrdiff_t>(lastAddress) - reinterpret_cast<ptrdiff_t>(m_thisMappedView + 0x80) >= static_cast<ptrdiff_t>(bufferSize))
-			buffer = lastAddress;
+			bufferAddress = lastAddress;
 		else //Resize shared memory
 		{
 			std::unique_ptr<uint8_t[]> tmpBuffer = std::make_unique<uint8_t[]>(m_numPages * 4096);
@@ -442,7 +507,6 @@ bool MemEx::Hook(const uintptr_t address, const void* const callback, const size
 				memcpy(nextAddress - (static_cast<size_t>(hook.second.callbackSize) + hook.second.trampolineSize), reinterpret_cast<const void*>(hook.first), static_cast<size_t>(hook.second.callbackSize) + hook.second.trampolineSize);
 				m_Hooks[reinterpret_cast<uintptr_t>(nextAddress)] = hook.second;
 
-
 #ifdef _WIN64
 				Write<uintptr_t>(hook.second.address + 2, reinterpret_cast<uintptr_t>(nextAddress), true);
 #else
@@ -454,23 +518,87 @@ bool MemEx::Hook(const uintptr_t address, const void* const callback, const size
 				nextAddress += static_cast<size_t>(hook.second.callbackSize) + hook.second.trampolineSize;
 			}
 
-			buffer = reinterpret_cast<uintptr_t>(nextAddress);
+			bufferAddress = reinterpret_cast<uintptr_t>(nextAddress);
 		}
 	}
 	
-	buffer -= (callbackSize + numReplacedBytes + HOOK_JUMP_SIZE);
+	bufferAddress -= bufferSize;
+	uint8_t* buffer = reinterpret_cast<uint8_t*>(bufferAddress);
 
-	uintptr_t targetBuffer = reinterpret_cast<uintptr_t>(m_targetMappedView) + (buffer - reinterpret_cast<uintptr_t>(m_thisMappedView));
+	uintptr_t targetBuffer = reinterpret_cast<uintptr_t>(m_targetMappedView) + static_cast<uintptr_t>(static_cast<ptrdiff_t>(bufferAddress) - reinterpret_cast<ptrdiff_t>(m_thisMappedView));
 
-	memcpy(reinterpret_cast<void*>(buffer), callback, callbackSize);
-	memcpy(reinterpret_cast<void*>(buffer + callbackSize), originalCode, numReplacedBytes);
+	if (saveCpuStateMask & GPR)
+	{
+#ifdef _WIN64
+		PLACE1(0x50); // push rax
+		PLACE1(0x51); // push rcx
+		PLACE1(0x52); // push rdx
+		PLACE2(0x5041); // push r8
+		PLACE2(0x5141); // push r9
+		PLACE2(0x5241); // push 10
+		PLACE2(0x5341); // push r11
+#else
+		PLACE1(0x60); // pushad
+#endif
+	}
+	if (saveCpuStateMask & XMMX)
+	{
+#ifdef _WIN64
+		PLACE4(0x60EC8348); // sub rsp, 0x60
+#else
+		PLACE1(0x83); PLACE2(0x60EC); // sub esp, 0x60
+#endif
+		PLACE1(0xF3); PLACE4(0x246C7F0F); PLACE1(0x50); // movdqu xmmword ptr ss:[r/esp+0x50], xmm5
+		PLACE1(0xF3); PLACE4(0x24647F0F); PLACE1(0x40); // movdqu xmmword ptr ss:[r/esp+0x40], xmm4
+		PLACE1(0xF3); PLACE4(0x245C7F0F); PLACE1(0x30); // movdqu xmmword ptr ss:[r/esp+0x30], xmm3
+		PLACE1(0xF3); PLACE4(0x24547F0F); PLACE1(0x20); // movdqu xmmword ptr ss:[r/esp+0x20], xmm2
+		PLACE1(0xF3); PLACE4(0x244C7F0F); PLACE1(0x10); // movdqu xmmword ptr ss:[r/esp+0x10], xmm1
+		PLACE1(0xF3); PLACE4(0x24047F0F); // movdqu xmmword ptr ss:[r/esp], xmm0
+	}
+	if (saveCpuStateMask & FLAGS)
+		{ PLACE1(0x9C); } // pushfd/q
+
+	memcpy(reinterpret_cast<void*>(buffer), callback, callbackSize); buffer += callbackSize;
+
+	if (saveCpuStateMask & FLAGS)
+		{ PLACE1(0x9D); } // popfd/q
+	if (saveCpuStateMask & XMMX)
+	{
+		PLACE1(0xF3); PLACE4(0x24046F0F); // movdqu xmm0, xmmword ptr ss:[r/esp]
+		PLACE1(0xF3); PLACE4(0x244C6F0F); PLACE1(0x10); // movdqu xmm1, xmmword ptr ss:[r/esp+0x10]
+		PLACE1(0xF3); PLACE4(0x24546F0F); PLACE1(0x20); // movdqu xmm2, xmmword ptr ss:[r/esp+0x20]
+		PLACE1(0xF3); PLACE4(0x245C6F0F); PLACE1(0x30); // movdqu xmm3, xmmword ptr ss:[r/esp+0x30]
+		PLACE1(0xF3); PLACE4(0x24646F0F); PLACE1(0x40); // movdqu xmm4, xmmword ptr ss:[r/esp+0x40]
+		PLACE1(0xF3); PLACE4(0x246C6F0F); PLACE1(0x50); // movdqu xmm5, xmmword ptr ss:[r/esp+0x50]
+#ifdef _WIN64
+		PLACE4(0x60C48348); // add rsp, 0x60
+#else
+		PLACE1(0x83); PLACE2(0x60C4); // add esp, 0x60
+#endif
+	}
+	if (saveCpuStateMask & GPR)
+	{
+#ifdef _WIN64
+		PLACE2(0x5B41); // pop r11
+		PLACE2(0x5A41); // pop r10
+		PLACE2(0x5941); // pop r9
+		PLACE2(0x5841); // pop r8
+		PLACE1(0x5A); // pop rdx
+		PLACE1(0x59); // pop rcx
+		PLACE1(0x58); // pop rax
+#else
+		PLACE1(0x61); // popad
+#endif
+	}
+
+	memcpy(reinterpret_cast<void*>(buffer), originalCode, numReplacedBytes); buffer += numReplacedBytes;
 
 	//Place jump from our hook back to the function & from function to our hook
 #ifdef _WIN64
 	uint8_t jump[12] = { 0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xE0 };
 
 	*reinterpret_cast<uintptr_t*>(jump + 2) = static_cast<uintptr_t>(address + numReplacedBytes);
-	memcpy(reinterpret_cast<void*>(buffer + callbackSize + numReplacedBytes), jump, 12);
+	memcpy(reinterpret_cast<void*>(buffer), jump, 12);
 
 	*reinterpret_cast<uintptr_t*>(jump + 2) = static_cast<uintptr_t>(targetBuffer);
 	if (!Write(address, jump, 12, true))
@@ -479,7 +607,7 @@ bool MemEx::Hook(const uintptr_t address, const void* const callback, const size
 	uint8_t jump[5] = { 0xE9 };
 
 	*reinterpret_cast<ptrdiff_t*>(jump + 1) = static_cast<ptrdiff_t>(address + numReplacedBytes) - static_cast<ptrdiff_t>(targetBuffer + bufferSize);
-	memcpy(reinterpret_cast<void*>(buffer + callbackSize + numReplacedBytes), jump, HOOK_JUMP_SIZE);
+	memcpy(reinterpret_cast<void*>(buffer), jump, HOOK_JUMP_SIZE);
 
 	*reinterpret_cast<ptrdiff_t*>(jump + 1) = static_cast<ptrdiff_t>(targetBuffer) - static_cast<ptrdiff_t>(address + HOOK_JUMP_SIZE);
 	if (!Write(address, jump, HOOK_JUMP_SIZE, false))
@@ -491,7 +619,7 @@ bool MemEx::Hook(const uintptr_t address, const void* const callback, const size
 #endif	
 #endif
 
-	m_Hooks[buffer] = { address, static_cast<uint16_t>(callbackSize), static_cast<uint8_t>(trampolineSize)};
+	m_Hooks[bufferAddress] = { address, static_cast<uint16_t>(callbackSize), static_cast<uint8_t>(trampolineSize)};
 
 	return static_cast<bool>(FlushInstructionCache(m_hProcess, reinterpret_cast<LPCVOID>(address), numReplacedBytes));
 }

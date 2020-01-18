@@ -58,6 +58,11 @@ enum class CConv
 #endif
 };
 
+//CPU STATES(for use in the saveCpuStateMask parameter on the Hook() function)
+#define GPR 0x01
+#define FLAGS 0x02
+#define XMMX 0x04
+
 class MemEx
 {
 	struct Nop
@@ -174,14 +179,14 @@ public:
 	
 #ifndef _WIN64
 	//Use the HOOK_MARK_END macro(if x86)
-	bool Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline = nullptr);
+	bool Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0);
 #endif
 
 	//Array of bytes with known size at compile time
 	template <class _Ty, size_t callbackSize>
-	bool Hook(const uintptr_t address, _Ty(&callback)[callbackSize], uintptr_t* const trampoline = nullptr) { return Hook(address, callback, callbackSize, trampoline); };
+	bool Hook(const uintptr_t address, _Ty(&callback)[callbackSize], uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0) { return Hook(address, callback, callbackSize, trampoline, saveCpuStateMask); };
 
-	bool Hook(const uintptr_t address, const void* const callback, const size_t callbackSize, uintptr_t* const trampoline = nullptr);
+	bool Hook(const uintptr_t address, const void* const callback, const size_t callbackSize, uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0);
 		
 	bool Unhook(const uintptr_t address);
 
