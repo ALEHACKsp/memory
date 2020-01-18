@@ -358,13 +358,13 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 			PLACE1(0xF3); PLACE4(0x24047F0F); // movdqu xmmword ptr ss:[r/esp], xmm0
 		}
 		if (saveCpuStateMask & FLAGS)
-		{ PLACE1(0x9C); } // pushfd/q
+			{ PLACE1(0x9C); } // pushfd/q
 
-		// jmp callback
+		// call callback
 #ifdef _WIN64
 		PLACE2(0xB848); PLACE8(callback); PLACE2(0xD0FF);
 #else
-		PLACE1(0xE9); PLACE4(reinterpret_cast<ptrdiff_t>(callback) - reinterpret_cast<ptrdiff_t>(buffer + 4));
+		PLACE1(0xE8); PLACE4(reinterpret_cast<ptrdiff_t>(callback) - reinterpret_cast<ptrdiff_t>(buffer + 4));
 #endif
 
 		if (saveCpuStateMask & FLAGS)
@@ -458,11 +458,11 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 #ifdef _WIN64
 		PLACE2(0xB848); PLACE8(callback); PLACE2(0xD0FF);
 #else
-		PLACE1(0xE9); PLACE4(reinterpret_cast<ptrdiff_t>(callback) - reinterpret_cast<ptrdiff_t>(buffer + 4));
+		PLACE1(0xE8); PLACE4(reinterpret_cast<ptrdiff_t>(callback) - reinterpret_cast<ptrdiff_t>(buffer + 4));
 #endif
 
 		if (saveCpuStateMask & FLAGS)
-		 {	PLACE1(0x9D); } // popfd/q
+			{ PLACE1(0x9D); } // popfd/q
 		if (saveCpuStateMask & XMMX)
 		{
 			PLACE1(0xF3); PLACE4(0x24046F0F); // movdqu xmm0, xmmword ptr ss:[r/esp]

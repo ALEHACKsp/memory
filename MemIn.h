@@ -15,6 +15,7 @@
 #include <TlHelp32.h>
 
 //CPU STATES(for use in the saveCpuStateMask parameter on the Hook() function)
+//Even though the upper portions of YMM0-15 and ZMM0-15 are volatitle, there's no mechanism to save them. 
 #define GPR 0x01
 #define FLAGS 0x02
 #define XMMX 0x04
