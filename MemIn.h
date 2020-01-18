@@ -4,7 +4,7 @@
 #define MEMIN_H
 
 #define ENABLE_PATTERN_SCAN_MULTITHREADING 1
-#define USE_CODE_CAVE_AS_MEMORY 1
+#define USE_CODE_CAVE_AS_MEMORY 0
 
 #include <Windows.h>
 #include <memory>
