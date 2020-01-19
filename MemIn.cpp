@@ -299,6 +299,9 @@ uintptr_t MemIn::ReadMultiLevelPointer(uintptr_t base, const std::vector<uint32_
 	return base;
 }
 
+/*If you perform a mid function hook(the saveCpuStateMask is not zero),
+you should not use the trampoline to try execute the rest of the original function.
+*/
 bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline, const DWORD saveCpuStateMask)
 {
 	ProtectRegion pr(address, HOOK_MAX_NUM_REPLACED_BYTES);
@@ -511,7 +514,7 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 #endif
 #endif
 
-	m_Hooks[address] = { bufferAddress, static_cast<uint8_t>(trampolineSize) };
+	m_Hooks[address] = { bufferAddress, static_cast<uint8_t>(trampolineSize), saveCpuStateMask };
 
 	if (trampoline)
 		*trampoline = saveCpuStateMask ? bufferAddress + cpuStateBufferSize + HOOK_JUMP_SIZE : bufferAddress;
@@ -521,14 +524,20 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 
 bool MemIn::Unhook(const uintptr_t address)
 {
-	ProtectRegion pr(address, m_Hooks[address].trampolineSize - HOOK_JUMP_SIZE);
+	ProtectRegion pr(address, static_cast<SIZE_T>(m_Hooks[address].trampolineSize - HOOK_JUMP_SIZE));
 	if (!pr.Success())
 		return false;
 
-	memcpy(reinterpret_cast<void*>(address), reinterpret_cast<const void*>(m_Hooks[address].trampoline), m_Hooks[address].trampolineSize - HOOK_JUMP_SIZE);
+#ifdef _WIN64
+	size_t trampolineOffset = static_cast<size_t>(m_Hooks[address].saveCpuStateMask & GPR ? 22 : 0) + (m_Hooks[address].saveCpuStateMask & XMMX ? 78 : 0);
+#else
+	size_t trampolineOffset = (m_Hooks[address].saveCpuStateMask & GPR ? 2 : 0) + (m_Hooks[address].saveCpuStateMask & XMMX ? 76 : 0);
+#endif
+	trampolineOffset += static_cast<size_t>(m_Hooks[address].saveCpuStateMask ? HOOK_JUMP_SIZE : 0) + (m_Hooks[address].saveCpuStateMask & FLAGS ? 2 : 0);
+	memcpy(reinterpret_cast<void*>(address), reinterpret_cast<const void*>(m_Hooks[address].trampoline + trampolineOffset), m_Hooks[address].trampolineSize - HOOK_JUMP_SIZE);
 	
 #if USE_CODE_CAVE_AS_MEMORY
-	memset(reinterpret_cast<void*>(m_Hooks[address].trampoline), 0xCC, static_cast<size_t>(m_Hooks[address].trampolineSize));
+	memset(reinterpret_cast<void*>(m_Hooks[address].trampoline), 0xCC, static_cast<size_t>(m_Hooks[address].trampolineSize) + trampolineOffset);
 #else
 	delete[] reinterpret_cast<uint8_t*>(m_Hooks[address].trampoline);
 #endif
