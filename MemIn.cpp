@@ -409,7 +409,7 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 	PLACE1(0xE9); PLACE4(static_cast<ptrdiff_t>((saveCpuStateMask) ? bufferAddress : reinterpret_cast<uintptr_t>(callback)) - reinterpret_cast<ptrdiff_t>(buffer + 4));
 #endif
 
-	m_Hooks[address] = { bufferAddress, static_cast<uint8_t>(trampolineSize), saveCpuStateBufferSize };
+	m_Hooks[address] = { bufferAddress, static_cast<uint8_t>(trampolineSize), static_cast<uint8_t>(saveCpuStateBufferSize) };
 
 	if (trampoline)
 		*trampoline = saveCpuStateMask ? bufferAddress + saveCpuStateBufferSize : bufferAddress;

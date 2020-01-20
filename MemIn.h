@@ -45,7 +45,7 @@ class MemIn
 	{
 		uintptr_t trampoline = 0;
 		uint8_t trampolineSize = 0;
-		DWORD saveCpuStateBufferSize = 0;
+		uint8_t saveCpuStateBufferSize = 0;
 	};
 
 	//Store addresses/bytes which the user nopped so they can be restored later with Patch()
