@@ -13,7 +13,7 @@
 #include <memory>
 
 #define ENABLE_PATTERN_SCAN_MULTITHREADING 1
-#define USE_CODE_CAVE_AS_MEMORY 1
+#define USE_CODE_CAVE_AS_MEMORY 0
 
 //Little trick. The x64 compile version of visual studio does not support inline assembly
 #ifndef _WIN64
@@ -76,6 +76,7 @@ class MemEx
 		uintptr_t address; //place where the hook is placed
 		uint16_t callbackSize;
 		uint8_t trampolineSize;
+		uint8_t saveCpuStateBufferSize = 0;
 	};
 
 	HANDLE m_hProcess; // A handle to the target process.
