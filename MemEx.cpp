@@ -611,6 +611,18 @@ uintptr_t MemEx::FindCodeCave(const size_t size, uintptr_t start, const uintptr_
 	return 0;
 }
 
+uintptr_t MemEx::FindCodeCave(const size_t size, uintptr_t start, const uintptr_t end, const std::vector<uint8_t>& bytes)
+{
+	for (auto byte : bytes)
+	{
+		auto address = FindCodeCave(size, start, end, byte);
+		if (address)
+			return address;
+	}
+
+	return 0;
+}
+
 PVOID MemEx::MapLocalViewOfFile(const HANDLE hFileMapping) { return MapViewOfFile(hFileMapping, FILE_MAP_ALL_ACCESS | FILE_MAP_WRITE, 0, 0, 0); }
 
 bool MemEx::UnmapLocalViewOfFile(LPCVOID localAddress) { return static_cast<bool>(UnmapViewOfFile(localAddress)); }

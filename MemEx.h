@@ -193,6 +193,8 @@ public:
 
 	uintptr_t FindCodeCave(const size_t size, uintptr_t start = 0, const uintptr_t end = -1, const uint8_t nullByte = static_cast<uint8_t>(0x00)) const;
 
+	uintptr_t FindCodeCave(const size_t size, uintptr_t start = 0, const uintptr_t end = -1, const std::vector<uint8_t>& bytes = {});
+
 	HANDLE AllocateSharedMemory(const size_t size, PVOID& localView, PVOID& remoteView) const;
 
 	bool FreeSharedMemory(HANDLE hFileMapping, LPCVOID localView, LPCVOID remoteView) const;
