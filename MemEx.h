@@ -73,7 +73,7 @@ class MemEx
 
 	struct HookStruct
 	{
-		uintptr_t address; //place where the hook is placed
+		uintptr_t address = 0; //place where the hook is placed
 		uint16_t callbackSize;
 		uint8_t trampolineSize;
 		uint8_t saveCpuStateBufferSize = 0;
