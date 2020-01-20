@@ -207,19 +207,24 @@ bool MemIn::HashMD5(const uintptr_t address, const size_t size, uint8_t* const o
 
 uintptr_t MemIn::PatternScan(const char* const pattern, const char* const mask, uintptr_t start, const uintptr_t end)
 {
+	std::atomic<uintptr_t> address = 0; std::atomic<size_t> finishCount = 0;
+
 #if ENABLE_PATTERN_SCAN_MULTITHREADING
-	unsigned int numThreads = std::thread::hardware_concurrency();  numThreads ? numThreads : 1;
-#else
-	unsigned int numThreads = 1;
-#endif
+	auto numThreads = std::thread::hardware_concurrency();
+	if (!numThreads)
+		numThreads = 1;
+
 	size_t chunkSize = (end - start) / numThreads;
 
-	std::atomic<uintptr_t> address = 0; std::atomic<size_t> finishCount = 0;
 	for (unsigned int i = 0; i < numThreads; i++)
 		std::thread(&MemIn::PatternScanImpl, std::ref(address), std::ref(finishCount), reinterpret_cast<const uint8_t* const>(pattern), mask, start + chunkSize * i, start + chunkSize * (static_cast<size_t>(i) + 1)).detach();
 
 	while (finishCount.load() != numThreads)
 		Sleep(1);
+
+#else
+	PatternScanImpl(address, finishCount, reinterpret_cast<const uint8_t* const>(pattern), mask, start, end);
+#endif	
 
 	return address.load();
 }
