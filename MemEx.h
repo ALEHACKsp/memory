@@ -191,9 +191,9 @@ public:
 		
 	bool Unhook(const uintptr_t address);
 
-	uintptr_t FindCodeCave(const size_t size, uintptr_t start = 0, const uintptr_t end = -1, const uint8_t nullByte = static_cast<uint8_t>(0x00)) const;
+	uintptr_t FindCodeCave(const size_t size, const uint8_t nullByte = static_cast<uint8_t>(0x00), uintptr_t start = 0, const uintptr_t end = -1, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
 
-	uintptr_t FindCodeCave(const size_t size, uintptr_t start = 0, const uintptr_t end = -1, const std::vector<uint8_t>& nullBytes = {}, uint8_t* const pNullByte = nullptr) const;
+	uintptr_t FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes = {}, uint8_t* const pNullByte = nullptr, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
 
 	HANDLE AllocateSharedMemory(const size_t size, PVOID& localView, PVOID& remoteView) const;
 

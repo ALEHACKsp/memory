@@ -440,40 +440,25 @@ bool MemIn::Unhook(const uintptr_t address)
 	return static_cast<bool>(FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<LPCVOID>(address), static_cast<SIZE_T>(m_Hooks[address].trampolineSize - HOOK_JUMP_SIZE)));
 }
 
-uintptr_t MemIn::FindCodeCave(const size_t size, uintptr_t start, const uintptr_t end, const uint8_t nullByte)
+uintptr_t MemIn::FindCodeCave(const size_t size, const uint8_t nullByte, uintptr_t start, const uintptr_t end, const DWORD protection)
 {
-	MEMORY_BASIC_INFORMATION mbi;
-	size_t count = 0;
+	auto pattern = std::make_unique<char[]>(size), mask = std::make_unique<char[]>(size);
+	memset(pattern.get(), static_cast<int>(nullByte), size);
+	memset(mask.get(), static_cast<int>('x'), size);
 
-	while (start < end && VirtualQuery(reinterpret_cast<LPCVOID>(start), &mbi, sizeof(MEMORY_BASIC_INFORMATION)))
-	{
-		//Only scan executable regions that don't have the PAGE_NOACCESS and PAGE_GUARD flags
-		if (!(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) && (mbi.Protect & 0xF0))
-		{
-			for (size_t i = 0; i < 4096 - (start % 4096); i++)
-			{
-				if (*reinterpret_cast<uint8_t*>(start + i) == nullByte && ++count == size)
-					return start + i;
-				else
-					count = 0;
-			}
-		}
-
-		start += 4096;
-	}
-
-	return 0;
+	return PatternScan(pattern.get(), mask.get(), start, end, protection);
 }
 
-uintptr_t MemIn::FindCodeCave(const size_t size, uintptr_t start, const uintptr_t end, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte)
+uintptr_t MemIn::FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte, uintptr_t start, const uintptr_t end, const DWORD protection)
 {
 	for (auto nullByte : nullBytes)
 	{
-		auto address = FindCodeCave(size, start, end, nullByte);
+		auto address = FindCodeCave(size, nullByte, start, end, protection);
 		if (address)
 		{
 			if (pNullByte)
 				*pNullByte = nullByte;
+
 			return address;
 		}
 	}

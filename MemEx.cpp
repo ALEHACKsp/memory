@@ -577,48 +577,26 @@ bool MemEx::Unhook(const uintptr_t address)
 	return false;
 }
 
-uintptr_t MemEx::FindCodeCave(const size_t size, uintptr_t start, const uintptr_t end, const uint8_t nullByte) const
+uintptr_t MemEx::FindCodeCave(const size_t size, const uint8_t nullByte, uintptr_t start, const uintptr_t end, const DWORD protection) const
 {
-	MEMORY_BASIC_INFORMATION mbi;
+	auto pattern = std::make_unique<char[]>(size), mask = std::make_unique<char[]>(size + 1);
+	memset(pattern.get(), static_cast<int>(nullByte), size);
+	memset(mask.get(), static_cast<int>('x'), size);
+	mask.get()[size] = '\0';
 
-	while (start < end && VirtualQueryEx(m_hProcess, reinterpret_cast<LPCVOID>(start), &mbi, sizeof(MEMORY_BASIC_INFORMATION)))
-	{
-		if (!(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) && (mbi.Protect & 0xF0))
-		{
-			uint8_t buffer[4096];
-
-			for (; start < reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize; start += 4096)
-			{
-				SIZE_T bufferSize;
-				if (!ReadProcessMemory(m_hProcess, reinterpret_cast<LPCVOID>(start), buffer, 4096, &bufferSize))
-					return 0;
-
-				const uint8_t* b = buffer, * const bufferEnd = buffer + bufferSize;
-				for (; b < bufferEnd; b++)
-				{
-					if (*b != nullByte)
-						goto byte_not_match;
-				}
-				return start + b - buffer;
-			byte_not_match:;
-			}
-		}
-
-		start = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;;
-	}
-
-	return 0;
+	return PatternScan(pattern.get(), mask.get(), start, end, protection);
 }
 
-uintptr_t MemEx::FindCodeCave(const size_t size, uintptr_t start, const uintptr_t end, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte) const
+uintptr_t MemEx::FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte, uintptr_t start, const uintptr_t end, const DWORD protection) const
 {
 	for (auto nullByte : nullBytes)
 	{
-		auto address = FindCodeCave(size, start, end, nullByte);
+		auto address = FindCodeCave(size, nullByte, start, end, protection);
 		if (address)
 		{
 			if (pNullByte)
 				*pNullByte = nullByte;
+
 			return address;
 		}
 	}
