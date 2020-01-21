@@ -76,14 +76,14 @@ public:
 	//outHash: A buffer capable of holding a MD5 hash which is 16 bytes.
 	static bool HashMD5(const uintptr_t address, const size_t size, uint8_t* const outHash);
 
-	static uintptr_t PatternScan(const char* const pattern, const char* const mask, uintptr_t start = 0, const uintptr_t end = -1);
-	static uintptr_t AOBScan(const char* const AOB, uintptr_t start = 0, const uintptr_t end = -1);
+	static uintptr_t PatternScan(const char* const pattern, const char* const mask, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1);
+	static uintptr_t AOBScan(const char* const AOB, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1);
 
-	static uintptr_t PatternScanModule(const char* const pattern, const char* const mask, const TCHAR* const moduleName = nullptr);
-	static uintptr_t AOBScanModule(const char* const AOB, const TCHAR* const moduleName = nullptr);
+	static uintptr_t PatternScanModule(const char* const pattern, const char* const mask, const TCHAR* const moduleName = nullptr, const DWORD protect = -1);
+	static uintptr_t AOBScanModule(const char* const AOB, const TCHAR* const moduleName = nullptr, const DWORD protect = -1);
 
-	static uintptr_t PatternScanAllModules(const char* const pattern, const char* const mask);
-	static uintptr_t AOBScanAllModules(const char* const AOB);
+	static uintptr_t PatternScanAllModules(const char* const pattern, const char* const mask, const DWORD protect = -1);
+	static uintptr_t AOBScanAllModules(const char* const AOB, const DWORD protect = -1);
 
 	static uintptr_t ReadMultiLevelPointer(const uintptr_t base, const std::vector<uint32_t>& offsets);
 
@@ -109,7 +109,7 @@ public:
 
 	static void AOBToPattern(const char* const AOB, std::string& pattern, std::string& mask);
 private:
-	static void PatternScanImpl(std::atomic<uintptr_t>& returnValue, std::atomic<size_t>& finishCount, const uint8_t* const pattern, const char* const mask, uintptr_t start = 0, const uintptr_t end = -1);
+	static void PatternScanImpl(std::atomic<uintptr_t>& returnValue, std::atomic<size_t>& finishCount, const uint8_t* const pattern, const char* const mask, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1);
 };
 
 #endif // MEMIN_H

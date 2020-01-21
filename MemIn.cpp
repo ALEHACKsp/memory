@@ -205,7 +205,7 @@ bool MemIn::HashMD5(const uintptr_t address, const size_t size, uint8_t* const o
 	return true;
 }
 
-uintptr_t MemIn::PatternScan(const char* const pattern, const char* const mask, uintptr_t start, const uintptr_t end)
+uintptr_t MemIn::PatternScan(const char* const pattern, const char* const mask, uintptr_t start, const uintptr_t end, const DWORD protect)
 {
 	std::atomic<uintptr_t> address = 0; std::atomic<size_t> finishCount = 0;
 
@@ -217,60 +217,61 @@ uintptr_t MemIn::PatternScan(const char* const pattern, const char* const mask, 
 	size_t chunkSize = (end - start) / numThreads;
 
 	for (unsigned int i = 0; i < numThreads; i++)
-		std::thread(&MemIn::PatternScanImpl, std::ref(address), std::ref(finishCount), reinterpret_cast<const uint8_t* const>(pattern), mask, start + chunkSize * i, start + chunkSize * (static_cast<size_t>(i) + 1)).detach();
+		std::thread(&MemIn::PatternScanImpl, std::ref(address), std::ref(finishCount), reinterpret_cast<const uint8_t* const>(pattern), mask, start + chunkSize * i, start + chunkSize * (static_cast<size_t>(i) + 1), protect).detach();
 
 	while (finishCount.load() != numThreads)
 		Sleep(1);
 
 #else
-	PatternScanImpl(address, finishCount, reinterpret_cast<const uint8_t* const>(pattern), mask, start, end);
+	PatternScanImpl(address, finishCount, reinterpret_cast<const uint8_t* const>(pattern), mask, start, end, protect);
 #endif	
 
 	return address.load();
 }
 
-uintptr_t MemIn::AOBScan(const char* const AOB, const uintptr_t start, const uintptr_t end)
+uintptr_t MemIn::AOBScan(const char* const AOB, const uintptr_t start, const uintptr_t end, const DWORD protect)
 {
 	std::string pattern, mask;
 	AOBToPattern(AOB, pattern, mask);
 
-	return PatternScan(pattern.c_str(), mask.c_str(), start, end);
+	return PatternScan(pattern.c_str(), mask.c_str(), start, end, protect);
 }
 
-uintptr_t MemIn::PatternScanModule(const char* const pattern, const char* const mask, const TCHAR* const moduleName)
+uintptr_t MemIn::PatternScanModule(const char* const pattern, const char* const mask, const TCHAR* const moduleName, const DWORD protect)
 {
 	uintptr_t moduleBase; DWORD moduleSize;
 	if (!(moduleBase = GetModuleBase(moduleName, &moduleSize)))
 		return 0;
 
-	return PatternScan(pattern, mask, moduleBase, moduleBase + moduleSize);
+	return PatternScan(pattern, mask, moduleBase, moduleBase + moduleSize, protect);
 }
 
-uintptr_t MemIn::AOBScanModule(const char* const AOB, const TCHAR* const moduleName)
+uintptr_t MemIn::AOBScanModule(const char* const AOB, const TCHAR* const moduleName, const DWORD protect)
 {
 	std::string pattern, mask;
 	AOBToPattern(AOB, pattern, mask);
 
-	return PatternScanModule(pattern.c_str(), mask.c_str(), moduleName);
+	return PatternScanModule(pattern.c_str(), mask.c_str(), moduleName, protect);
 }
 
 //Credits: https://guidedhacking.com/threads/internal-pattern-scanning-without-know-the-module.13315/
-uintptr_t MemIn::PatternScanAllModules(const char* const pattern, const char* const mask)
+uintptr_t MemIn::PatternScanAllModules(const char* const pattern, const char* const mask, const DWORD protect)
 {
 	struct PatternInfo
 	{
 		const char* const pattern, * const mask;
 		uintptr_t address;
+		DWORD protect;
 	};
 
-	PatternInfo pi = { pattern, mask, 0 };
+	PatternInfo pi = { pattern, mask, 0, protect };
 
 	EnumModules(
 		GetCurrentProcessId(),
 		[](const MODULEENTRY32& me, void* param)
 		{
 			PatternInfo* pi = static_cast<PatternInfo*>(param);
-			return !(pi->address = MemIn::PatternScan(pi->pattern, pi->mask, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr + me.modBaseSize)));
+			return !(pi->address = MemIn::PatternScan(pi->pattern, pi->mask, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr + me.modBaseSize), pi->protect));
 		},
 		&pi
 	);
@@ -278,12 +279,12 @@ uintptr_t MemIn::PatternScanAllModules(const char* const pattern, const char* co
 	return pi.address;
 }
 
-uintptr_t MemIn::AOBScanAllModules(const char* const AOB)
+uintptr_t MemIn::AOBScanAllModules(const char* const AOB, const DWORD protect)
 {
 	std::string pattern, mask;
 	AOBToPattern(AOB, pattern, mask);
 
-	return PatternScanAllModules(pattern.c_str(), mask.c_str());
+	return PatternScanAllModules(pattern.c_str(), mask.c_str(), protect);
 }
 
 //Based on https://guidedhacking.com/threads/finddmaaddy-c-multilevel-pointer-function.6292/
@@ -645,14 +646,14 @@ void MemIn::AOBToPattern(const char* const AOB, std::string& pattern, std::strin
 }
 
 //Inspired by https://github.com/cheat-engine/cheat-engine/blob/ac072b6fae1e0541d9e54e2b86452507dde4689a/Cheat%20Engine/ceserver/native-api.c
-void MemIn::PatternScanImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>& finishCount, const uint8_t* const pattern, const char* const mask, uintptr_t start, const uintptr_t end)
+void MemIn::PatternScanImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>& finishCount, const uint8_t* const pattern, const char* const mask, uintptr_t start, const uintptr_t end, const DWORD protect)
 {
 	MEMORY_BASIC_INFORMATION mbi;
 	const size_t patternSize = strlen(mask);
 
 	while (!address.load() && start < end && VirtualQuery(reinterpret_cast<LPCVOID>(start), &mbi, sizeof(MEMORY_BASIC_INFORMATION)))
 	{
-		if (!(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) && mbi.Protect)
+		if (!(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) && (mbi.Protect & protect))
 		{
 			for (; start < reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize; start += 4096)
 			{

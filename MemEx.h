@@ -153,14 +153,14 @@ public:
 	//outHash: A buffer capable of holding a MD5 hash which is 16 bytes.
 	bool HashMD5(const uintptr_t address, const size_t size, uint8_t* const outHash) const;
 
-	uintptr_t PatternScan(const char* const pattern, const char* const mask, uintptr_t start = 0, const uintptr_t end = -1) const;
-	uintptr_t AOBScan(const char* const AOB, uintptr_t start = 0, const uintptr_t end = -1) const;
+	uintptr_t PatternScan(const char* const pattern, const char* const mask, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1) const;
+	uintptr_t AOBScan(const char* const AOB, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1) const;
 
-	uintptr_t PatternScanModule(const char* const pattern, const char* const mask, const TCHAR* const moduleName = nullptr) const;
-	uintptr_t AOBScanModule(const char* const AOB, const TCHAR* const moduleName = nullptr) const;
+	uintptr_t PatternScanModule(const char* const pattern, const char* const mask, const TCHAR* const moduleName = nullptr, const DWORD protect = -1) const;
+	uintptr_t AOBScanModule(const char* const AOB, const TCHAR* const moduleName = nullptr, const DWORD protect = -1) const;
 
-	uintptr_t PatternScanAllModules(const char* const pattern, const char* const mask) const;
-	uintptr_t AOBScanAllModules(const char* const AOB) const;
+	uintptr_t PatternScanAllModules(const char* const pattern, const char* const mask, const DWORD protect = -1) const;
+	uintptr_t AOBScanAllModules(const char* const AOB, const DWORD protect = -1) const;
 
 	uintptr_t ReadMultiLevelPointer(const uintptr_t base, const std::vector<uint32_t>& offsets) const;
 
@@ -230,7 +230,7 @@ public:
 	static HANDLE CreateSharedMemory(const size_t size);
 
 private:
-	void PatternScanImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>& finishCount, const uint8_t* const pattern, const char* const mask, uintptr_t start = 0, const uintptr_t end = -1) const;
+	void PatternScanImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>& finishCount, const uint8_t* const pattern, const char* const mask, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1) const;
 	
 	void* CallImpl(const CConv cConv, const bool isReturnFloat, const bool isReturnDouble, const size_t returnSize, const uintptr_t functionAddress, std::vector<Arg>& args);
 
