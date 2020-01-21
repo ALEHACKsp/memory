@@ -442,9 +442,10 @@ bool MemIn::Unhook(const uintptr_t address)
 
 uintptr_t MemIn::FindCodeCave(const size_t size, const uint8_t nullByte, uintptr_t start, const uintptr_t end, const DWORD protection)
 {
-	auto pattern = std::make_unique<char[]>(size), mask = std::make_unique<char[]>(size);
+	auto pattern = std::make_unique<char[]>(size), mask = std::make_unique<char[]>(size + 1);
 	memset(pattern.get(), static_cast<int>(nullByte), size);
 	memset(mask.get(), static_cast<int>('x'), size);
+	mask.get()[size] = '\0';
 
 	return PatternScan(pattern.get(), mask.get(), start, end, protection);
 }
