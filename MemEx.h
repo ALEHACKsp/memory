@@ -74,8 +74,8 @@ class MemEx
 	struct HookStruct
 	{
 		uintptr_t address = 0; //place where the hook is placed
-		uint16_t callbackSize;
-		uint8_t trampolineSize;
+		uint16_t callbackSize = 0;
+		uint8_t trampolineSize = 0;
 		uint8_t saveCpuStateBufferSize = 0;
 	};
 
@@ -193,7 +193,7 @@ public:
 
 	uintptr_t FindCodeCave(const size_t size, uintptr_t start = 0, const uintptr_t end = -1, const uint8_t nullByte = static_cast<uint8_t>(0x00)) const;
 
-	uintptr_t FindCodeCave(const size_t size, uintptr_t start = 0, const uintptr_t end = -1, const std::vector<uint8_t>& bytes = {});
+	uintptr_t FindCodeCave(const size_t size, uintptr_t start = 0, const uintptr_t end = -1, const std::vector<uint8_t>& nullBytes = {}, uint8_t* const pNullByte = nullptr) const;
 
 	HANDLE AllocateSharedMemory(const size_t size, PVOID& localView, PVOID& remoteView) const;
 

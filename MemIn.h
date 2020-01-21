@@ -93,7 +93,7 @@ public:
 
 	static uintptr_t FindCodeCave(const size_t size, uintptr_t start = 0, const uintptr_t end = -1, const uint8_t nullByte = static_cast<uint8_t>(0x00));
 
-	static uintptr_t FindCodeCave(const size_t size, uintptr_t start = 0, const uintptr_t end = -1, const std::vector<uint8_t>& bytes = {});
+	static uintptr_t FindCodeCave(const size_t size, uintptr_t start = 0, const uintptr_t end = -1, const std::vector<uint8_t>& nullBytes = {}, uint8_t* const pNullByte = nullptr);
 
 	static DWORD GetProcessIdByName(const TCHAR* const processName);
 	static DWORD GetProcessIdByWindow(const TCHAR* const windowName, const TCHAR* const className = nullptr);

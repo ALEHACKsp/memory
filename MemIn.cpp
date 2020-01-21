@@ -463,13 +463,17 @@ uintptr_t MemIn::FindCodeCave(const size_t size, uintptr_t start, const uintptr_
 	return 0;
 }
 
-uintptr_t MemIn::FindCodeCave(const size_t size, uintptr_t start, const uintptr_t end, const std::vector<uint8_t>& bytes)
+uintptr_t MemIn::FindCodeCave(const size_t size, uintptr_t start, const uintptr_t end, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte)
 {
-	for (auto byte : bytes)
+	for (auto nullByte : nullBytes)
 	{
-		auto address = FindCodeCave(size, start, end, byte);
+		auto address = FindCodeCave(size, start, end, nullByte);
 		if (address)
+		{
+			if (pNullByte)
+				*pNullByte = nullByte;
 			return address;
+		}
 	}
 
 	return 0;
