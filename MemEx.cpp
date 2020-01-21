@@ -30,8 +30,6 @@
 	#define CALCULATE_SAVE_CPU_STATE_BUFFER_SIZE(mask) ((mask ? HOOK_JUMP_SIZE : 0) + (mask & FLAGS ? 2 : 0) + (mask & GPR ? 2 : 0) + (mask & XMMX ? 76 : 0))
 #endif
 
-
-
 //LDE
 #define R (*b >> 4) // Four high-order bits of an opcode to index a row of the opcode table
 #define C (*b & 0xF) // Four low-order bits to index a column of the table
@@ -41,9 +39,9 @@ static const uint8_t op1imm8[] = { 0x6A, 0x6B, 0x80, 0x82, 0x83, 0xA8, 0xC0, 0xC
 static const uint8_t op1imm32[] = { 0x68, 0x69, 0x81, 0xA9, 0xC7, 0xE8, 0xE9 };
 static const uint8_t op2modrm[] = { 0x0D, 0xA3, 0xA4, 0xA5, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF };
 
-bool findByte(const uint8_t* arr, const size_t N, const uint8_t x) { for (size_t i = 0; i < N; i++) { if (arr[i] == x) { return true; } }; return false; }
+inline bool findByte(const uint8_t* arr, const size_t N, const uint8_t x) { for (size_t i = 0; i < N; i++) { if (arr[i] == x) { return true; } }; return false; }
 
-void parseModRM(uint8_t** b, const bool addressPrefix)
+inline void parseModRM(uint8_t** b, const bool addressPrefix)
 {
 	uint8_t modrm = *++*b;
 
@@ -66,8 +64,8 @@ void parseModRM(uint8_t** b, const bool addressPrefix)
 
 //MD5
 #define ROL(x,s)((x<<s)|x>>(32-s))
-uint32_t r[] = { 7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21 };
-uint32_t k[] = { 0xd76aa478,0xe8c7b756,0x242070db,0xc1bdceee,0xf57c0faf,0x4787c62a,0xa8304613,0xfd469501,0x698098d8,0x8b44f7af,0xffff5bb1,0x895cd7be,0x6b901122,0xfd987193,0xa679438e,0x49b40821,0xf61e2562,0xc040b340,0x265e5a51,0xe9b6c7aa,0xd62f105d,0x02441453,0xd8a1e681,0xe7d3fbc8,0x21e1cde6,0xc33707d6,0xf4d50d87,0x455a14ed,0xa9e3e905,0xfcefa3f8,0x676f02d9,0x8d2a4c8a,0xfffa3942,0x8771f681,0x6d9d6122,0xfde5380c,0xa4beea44,0x4bdecfa9,0xf6bb4b60,0xbebfbc70,0x289b7ec6,0xeaa127fa,0xd4ef3085,0x04881d05,0xd9d4d039,0xe6db99e5,0x1fa27cf8,0xc4ac5665,0xf4292244,0x432aff97,0xab9423a7,0xfc93a039,0x655b59c3, 0x8f0ccc92, 0xffeff47d, 0x85845dd1,0x6fa87e4f,0xfe2ce6e0,0xa3014314,0x4e0811a1,0xf7537e82,0xbd3af235,0x2ad7d2bb,0xeb86d391 };
+static const uint32_t r[] = { 7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21 };
+static const uint32_t k[] = { 0xd76aa478,0xe8c7b756,0x242070db,0xc1bdceee,0xf57c0faf,0x4787c62a,0xa8304613,0xfd469501,0x698098d8,0x8b44f7af,0xffff5bb1,0x895cd7be,0x6b901122,0xfd987193,0xa679438e,0x49b40821,0xf61e2562,0xc040b340,0x265e5a51,0xe9b6c7aa,0xd62f105d,0x02441453,0xd8a1e681,0xe7d3fbc8,0x21e1cde6,0xc33707d6,0xf4d50d87,0x455a14ed,0xa9e3e905,0xfcefa3f8,0x676f02d9,0x8d2a4c8a,0xfffa3942,0x8771f681,0x6d9d6122,0xfde5380c,0xa4beea44,0x4bdecfa9,0xf6bb4b60,0xbebfbc70,0x289b7ec6,0xeaa127fa,0xd4ef3085,0x04881d05,0xd9d4d039,0xe6db99e5,0x1fa27cf8,0xc4ac5665,0xf4292244,0x432aff97,0xab9423a7,0xfc93a039,0x655b59c3, 0x8f0ccc92, 0xffeff47d, 0x85845dd1,0x6fa87e4f,0xfe2ce6e0,0xa3014314,0x4e0811a1,0xf7537e82,0xbd3af235,0x2ad7d2bb,0xeb86d391 };
 
 typedef PVOID (__stdcall * _MapViewOfFileNuma2)(HANDLE FileMappingHandle, HANDLE ProcessHandle, ULONG64 Offset, PVOID BaseAddress, SIZE_T ViewSize, ULONG AllocationType, ULONG PageProtection, ULONG PreferredNode);
 typedef BOOL (__stdcall * _UnmapViewOfFile2)(HANDLE Process, LPCVOID BaseAddress, ULONG UnmapFlags);
@@ -319,7 +317,7 @@ uintptr_t MemEx::PatternScanAllModules(const char* const pattern, const char* co
 	PatternInfo pi = { pattern, mask, this, 0, protect};
 
 	EnumModules(m_dwProcessId,
-		[](const MODULEENTRY32& me, void* param)
+		[](MODULEENTRY32& me, void* param)
 		{
 			PatternInfo* pi = static_cast<PatternInfo*>(param);
 			return !(pi->address = pi->mem->PatternScan(pi->pattern, pi->mask, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr + me.modBaseSize), pi->protect));
@@ -770,10 +768,16 @@ uintptr_t MemEx::GetModuleBase(const DWORD dwProcessId, const TCHAR* const modul
 	ModuleInfo mi = { moduleName, NULL, pModuleSize};
 
 	EnumModules(dwProcessId,
-		[](const MODULEENTRY32& me, void* param) 
+		[](MODULEENTRY32& me, void* param)
 		{
 			ModuleInfo* mi = static_cast<ModuleInfo*>(param);
-			if ((mi->name) ? (!lstrcmp(me.szModule, mi->name)) : (lstrstr(me.szModule, TEXT(".exe")) != nullptr))
+			std::transform(std::begin(me.szModule), std::end(me.szModule), me.szModule, tolower);
+
+			TCHAR moduleNameLowerCase[MAX_MODULE_NAME32 + 1] = { TEXT('\0') };
+			if(mi->name)
+				std::transform(mi->name, mi->name + lstrlen(mi->name) + 1, moduleNameLowerCase, tolower);
+			
+			if ((mi->name) ? (!lstrcmp(me.szModule, moduleNameLowerCase)) : (lstrstr(me.szModule, TEXT(".exe")) != nullptr))
 			{
 				mi->base = reinterpret_cast<uintptr_t>(me.modBaseAddr);
 				if(mi->size)
@@ -855,7 +859,7 @@ size_t MemEx::GetInstructionLength(const void* const address)
 	return (size_t)((ptrdiff_t)(++b + offset) - (ptrdiff_t)(address));
 }
 
-void MemEx::EnumModules(const DWORD processId, bool (*callback)(const MODULEENTRY32& me, void* param), void* param)
+void MemEx::EnumModules(const DWORD processId, bool (*callback)(MODULEENTRY32& me, void* param), void* param)
 {
 	const HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, processId);
 	if (hSnapshot == INVALID_HANDLE_VALUE)

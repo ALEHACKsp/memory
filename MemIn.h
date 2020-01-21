@@ -100,12 +100,11 @@ public:
 
 	//If moduleName is NULL, GetModuleBase() returns the base of the module created by the file used to create the process specified (.exe file)
 	static uintptr_t GetModuleBase(const TCHAR* const moduleName = nullptr, DWORD* const pModuleSize = nullptr);
-	static uintptr_t GetModuleBase(const DWORD dwProcessId, const TCHAR* const moduleName = nullptr, DWORD* const pModuleSize = nullptr);
 
 	//address on the virtual address space of the current process.
 	static size_t GetInstructionLength(const void* const address);
 
-	static void EnumModules(const DWORD processId, bool (*callback)(const MODULEENTRY32& me, void* param), void* param);
+	static void EnumModules(const DWORD processId, bool (*callback)(MODULEENTRY32& me, void* param), void* param);
 
 	static void AOBToPattern(const char* const AOB, std::string& pattern, std::string& mask);
 private:

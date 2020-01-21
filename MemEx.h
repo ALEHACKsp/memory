@@ -221,7 +221,7 @@ public:
 	//address on the virtual address space of the current process.
 	static size_t GetInstructionLength(const void* const address);
 	
-	static void EnumModules(const DWORD processId, bool (*callback)(const MODULEENTRY32& me, void* param), void* param);
+	static void EnumModules(const DWORD processId, bool (*callback)(MODULEENTRY32& me, void* param), void* param);
 
 	static void AOBToPattern(const char* const AOB, std::string& pattern, std::string& mask);
 
