@@ -454,7 +454,7 @@ public:
 
 	//Returns the size of first parsed instruction on the buffer at 'address'.
 	//Parameters:
-	//  address [in] The address of the buffer on the current process's address space containing instruction.
+	//  address [in] The address of the buffer containing instruction.
 	size_t GetInstructionLength(const uintptr_t address);
 	
 	//Loops through all modules of a process passing its information to a callback function.
