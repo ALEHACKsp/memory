@@ -132,27 +132,27 @@ void MemEx::Detach()
 HANDLE MemEx::GetProcess() const { return m_hProcess; }
 DWORD MemEx::GetPid() const { return m_dwProcessId; }
 
-bool MemEx::Read(const uintptr_t address, void* const buffer, const SIZE_T size, const bool protect) const
+bool MemEx::Read(const uintptr_t address, void* const buffer, const SIZE_T size) const { return ReadProcessMemory(m_hProcess, reinterpret_cast<LPCVOID>(address), buffer, size, NULL); }
+
+bool MemEx::Write(uintptr_t address, const void* const buffer, const SIZE_T size) const
 {
-	DWORD oldProtect;
-	if(protect && !VirtualProtectEx(m_hProcess, reinterpret_cast<LPVOID>(address), size, PAGE_EXECUTE_READWRITE, &oldProtect))
+	MEMORY_BASIC_INFORMATION mbi;
+	if (!VirtualQueryEx(m_hProcess, reinterpret_cast<LPCVOID>(address), &mbi, sizeof(MEMORY_BASIC_INFORMATION)))
 		return false;
 
-	return ReadProcessMemory(m_hProcess, reinterpret_cast<LPCVOID>(address), buffer, size, NULL) && 
-		(protect) ? VirtualProtectEx(m_hProcess, reinterpret_cast<LPVOID>(address), size, oldProtect, &oldProtect) : true;
+	DWORD oldProtect = 0;
+	if (mbi.Protect & (PAGE_READONLY | PAGE_GUARD))
+		VirtualProtectEx(m_hProcess, reinterpret_cast<LPVOID>(address), size, PAGE_EXECUTE_READWRITE, &oldProtect);
+
+	bool ret = static_cast<bool>(WriteProcessMemory(m_hProcess, reinterpret_cast<LPVOID>(address), buffer, size, NULL));
+
+	if (oldProtect)
+		VirtualProtectEx(m_hProcess, reinterpret_cast<LPVOID>(address), size, oldProtect, &oldProtect);
+
+	return ret;
 }
 
-bool MemEx::Write(uintptr_t address, const void* const buffer, const SIZE_T size, const bool protect) const
-{
-	DWORD oldProtect;
-	if (protect && !VirtualProtectEx(m_hProcess, reinterpret_cast<LPVOID>(address), size, PAGE_EXECUTE_READWRITE, &oldProtect))
-		return false;
-
-	return WriteProcessMemory(m_hProcess, reinterpret_cast<LPVOID>(address), buffer, size, NULL) &&
-		(protect) ? VirtualProtectEx(m_hProcess, reinterpret_cast<LPVOID>(address), size, oldProtect, &oldProtect) : true;
-}
-
-bool MemEx::Patch(const uintptr_t address, const char* const bytes, const size_t size) const { return Write(address, bytes, size, true) && static_cast<bool>(FlushInstructionCache(m_hProcess, reinterpret_cast<LPCVOID>(address), static_cast<SIZE_T>(size))); }
+bool MemEx::Patch(const uintptr_t address, const char* const bytes, const size_t size) const { return Write(address, bytes, size) && static_cast<bool>(FlushInstructionCache(m_hProcess, reinterpret_cast<LPCVOID>(address), static_cast<SIZE_T>(size))); }
 
 bool MemEx::Nop(const uintptr_t address, const size_t size, const bool saveBytes)
 {
@@ -184,7 +184,7 @@ bool MemEx::Copy(const uintptr_t destinationAddress, const uintptr_t sourceAddre
 {
 	std::unique_ptr<uint8_t[]> buffer = std::make_unique<uint8_t[]>(size);
 
-	return !Read(sourceAddress, buffer.get(), size, true) || !Write(destinationAddress, buffer.get(), size, true);
+	return !Read(sourceAddress, buffer.get(), size) || !Write(destinationAddress, buffer.get(), size);
 }
 
 bool MemEx::Set(const uintptr_t address, const int value, const size_t size) const
@@ -192,7 +192,7 @@ bool MemEx::Set(const uintptr_t address, const int value, const size_t size) con
 	std::unique_ptr<uint8_t[]> buffer = std::make_unique<uint8_t[]>(size);
 	memset(buffer.get(), value, size);
 
-	return Write(address, buffer.get(), size, true);
+	return Write(address, buffer.get(), size);
 }
 
 bool MemEx::Compare(const uintptr_t address1, const uintptr_t address2, const size_t size) const
@@ -210,7 +210,7 @@ bool MemEx::HashMD5(const uintptr_t address, const size_t size, uint8_t* const o
 	size_t N = ((((size + 8) / 64) + 1) * 64) - 8;
 
 	std::unique_ptr<uint8_t[]> buffer = std::make_unique<uint8_t[]>(N + 64);
-	if (!Read(address, buffer.get(), size, true))
+	if (!Read(address, buffer.get(), size))
 		return false;
 
 	buffer[size] = static_cast<uint8_t>(0x80); // 0b10000000
@@ -424,11 +424,11 @@ bool MemEx::Hook(const uintptr_t address, const void* const callback, const size
 				m_Hooks[reinterpret_cast<uintptr_t>(nextAddress)] = hook.second;
 
 #ifdef _WIN64
-				Write<uintptr_t>(hook.second.address + 2, reinterpret_cast<uintptr_t>(nextAddress), true);
+				Write<uintptr_t>(hook.second.address + 2, reinterpret_cast<uintptr_t>(nextAddress));
 #else
-				Write<ptrdiff_t>(reinterpret_cast<uintptr_t>(nextAddress + hook.second.callbackSize + hook.second.trampolineSize + 1), static_cast<ptrdiff_t>(address + numReplacedBytes) - reinterpret_cast<ptrdiff_t>(nextAddress + hook.second.callbackSize + hook.second.trampolineSize), true);
+				Write<ptrdiff_t>(reinterpret_cast<uintptr_t>(nextAddress + hook.second.callbackSize + hook.second.trampolineSize + 1), static_cast<ptrdiff_t>(address + numReplacedBytes) - reinterpret_cast<ptrdiff_t>(nextAddress + hook.second.callbackSize + hook.second.trampolineSize));
 
-				Write<ptrdiff_t>(hook.second.address + hook.second.trampolineSize - 5, reinterpret_cast<ptrdiff_t>(nextAddress) - static_cast<ptrdiff_t>(hook.second.address + hook.second.trampolineSize), true);
+				Write<ptrdiff_t>(hook.second.address + hook.second.trampolineSize - 5, reinterpret_cast<ptrdiff_t>(nextAddress) - static_cast<ptrdiff_t>(hook.second.address + hook.second.trampolineSize));
 #endif
 
 				nextAddress += static_cast<size_t>(hook.second.callbackSize) + hook.second.trampolineSize;
@@ -547,7 +547,7 @@ bool MemEx::Hook(const uintptr_t address, const void* const callback, const size
 		*trampoline = targetBuffer + saveCpuStateBufferSize;
 #endif
 
-	if (!Write(address, jump, HOOK_JUMP_SIZE, true))
+	if (!Write(address, jump, HOOK_JUMP_SIZE))
 		return false;
 
 	m_Hooks[bufferAddress] = { address, static_cast<uint16_t>(callbackSize), static_cast<uint8_t>(trampolineSize), static_cast<uint8_t>(saveCpuStateBufferSize) };
@@ -562,7 +562,7 @@ bool MemEx::Unhook(const uintptr_t address)
 		if (hook.second.address == address)
 		{
 			//Restore original instruction(s)
-			Write(address, reinterpret_cast<const void*>(hook.first + + hook.second.saveCpuStateBufferSize + hook.second.callbackSize), hook.second.trampolineSize - HOOK_JUMP_SIZE, true);
+			Write(address, reinterpret_cast<const void*>(hook.first + + hook.second.saveCpuStateBufferSize + hook.second.callbackSize), hook.second.trampolineSize - HOOK_JUMP_SIZE);
 
 #if USE_CODE_CAVE_AS_MEMORY
 			memset(reinterpret_cast<void*>(hook.first), 0xCC, static_cast<size_t>(static_cast<size_t>(hook.second.callbackSize) + hook.second.trampolineSize));

@@ -79,19 +79,15 @@ MemIn::ProtectRegion::ProtectRegion(const uintptr_t address, const SIZE_T size, 
 
 MemIn::ProtectRegion::~ProtectRegion() { VirtualProtect(reinterpret_cast<LPVOID>(m_Address), m_Size, m_Protection, &m_Protection); }
 
-bool MemIn::Read(const uintptr_t address, void* const buffer, const SIZE_T size, const bool protect)
+void MemIn::Read(const uintptr_t address, void* const buffer, const SIZE_T size) { memcpy(buffer, reinterpret_cast<const void*>(address), size); }
+
+bool MemIn::Write(const uintptr_t address, const void* const buffer, const SIZE_T size)
 {
-	ProtectRegion pr(address, size, protect);
-	if (!pr.Success())
+	MEMORY_BASIC_INFORMATION mbi;
+	if (!VirtualQuery(reinterpret_cast<LPCVOID>(address), &mbi, sizeof(MEMORY_BASIC_INFORMATION)))
 		return false;
 
-	memcpy(buffer, reinterpret_cast<const void*>(address), size);
-
-	return true;
-}
-
-bool MemIn::Write(const uintptr_t address, const void* const buffer, const SIZE_T size, const bool protect)
-{
+	bool protect = (mbi.Protect & (PAGE_READONLY | PAGE_GUARD));
 	ProtectRegion pr(address, size, protect);
 	if (!pr.Success())
 		return false;
@@ -101,7 +97,7 @@ bool MemIn::Write(const uintptr_t address, const void* const buffer, const SIZE_
 	return true;
 }
 
-bool MemIn::Patch(const uintptr_t address, const char* bytes, const size_t size) { return Write(address, bytes, size, true) && static_cast<bool>(FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<LPCVOID>(address), static_cast<SIZE_T>(size))); }
+bool MemIn::Patch(const uintptr_t address, const char* bytes, const size_t size) { return Write(address, bytes, size) && static_cast<bool>(FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<LPCVOID>(address), static_cast<SIZE_T>(size))); }
 
 bool MemIn::Nop(const uintptr_t address, const size_t size, const bool saveBytes)
 {
@@ -110,11 +106,7 @@ bool MemIn::Nop(const uintptr_t address, const size_t size, const bool saveBytes
 		m_Nops[address].buffer = std::make_unique<uint8_t[]>(size);
 		m_Nops[address].size = size;
 
-		if (!Read(address, m_Nops[address].buffer.get(), size))
-		{
-			m_Nops.erase(address);
-			return false;
-		}
+		Read(address, m_Nops[address].buffer.get(), size);
 	}
 
 	return Set(address, 0x90, size) && static_cast<bool>(FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<LPCVOID>(address), static_cast<SIZE_T>(size)));
@@ -162,8 +154,7 @@ bool MemIn::HashMD5(const uintptr_t address, const size_t size, uint8_t* const o
 	size_t N = ((((size + 8) / 64) + 1) * 64) - 8;
 
 	std::unique_ptr<uint8_t[]> buffer = std::make_unique<uint8_t[]>(N + 64);
-	if (!Read(address, buffer.get(), size, true))
-		return false;
+	Read(address, buffer.get(), size);
 
 	buffer[size] = static_cast<uint8_t>(0x80); // 0b10000000
 	*reinterpret_cast<uint32_t*>(buffer.get() + N) = static_cast<uint32_t>(size * 8);

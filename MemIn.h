@@ -54,58 +54,244 @@ class MemIn
 	static std::unordered_map<uintptr_t, HookStruct> m_Hooks;
 
 public:
+	//Returns a copy of the data.
+	//Parameters:
+	//  address [in] The address on the VAS of the current 
+	//               process where the bytes will be read from.
 	template <typename T>
-	static inline T Read(const uintptr_t address, bool protect) { if (!ProtectRegion(address, sizeof(T), protect).Success()) { return T(); }; return *reinterpret_cast<T*>(address); }
-	static bool Read(const uintptr_t address, void* const buffer, const SIZE_T size, const bool protect = false);
+	static inline T Read(const uintptr_t address)
+	{
+		T t;
+		Read(address, &t, sizeof(T));
+		return t;
+	}
 
+	//Copies 'size' bytes from 'address' to 'buffer'.
+	//Parameters:
+	//  address [in]  The address where the bytes will be copied from.
+	//  buffer  [out] The buffer where the bytes will be copied to.
+	//  size    [in]  The number of bytes to be copied.
+	static void Read(const uintptr_t address, void* const buffer, const SIZE_T size);
+
+	//Copies 'value' to 'address'.
+	//Parameters:
+	//  address [in] The address where the bytes will be copied to.
+	//  value   [in] The value where the bytes will be copied from.
 	template <typename T>
 	static inline bool Write(const uintptr_t address, const T& value) { return Write(address, &value, sizeof(T)); }
-	static bool Write(const uintptr_t address, const void* const buffer, const SIZE_T size, const bool protect = false);
 
+	//Copies 'size' bytes from 'buffer' on the current process to 'address' on the attached process.
+	//Parameters:
+	//  address [in] The address where the bytes will be copied to.
+	//  buffer  [in] The buffer where the bytes will be copied from.
+	//  size    [in] The number of bytes to be copied.
+	static bool Write(const uintptr_t address, const void* const buffer, const SIZE_T size);
+
+	//Patches 'address' with 'size' bytes stored on 'bytes'.
+	//Parameters:
+	//  address [in] The address where the bytes will be copied to.
+	//  buffer  [in] The buffer where the bytes will be copied from.
+	//  size    [in] The number of bytes to be copied.
 	static bool Patch(const uintptr_t address, const char* bytes, const size_t size);
 
+	//Writes 'size' 0x90 bytes at address.
+	//Parameters:
+	//  address   [in] The address where the bytes will be nopped.
+	//  size      [in] The number of bytes to be written.
+	//  saveBytes [in] If true, save the original bytes located at 'address'
+	//                 where they can be later restored by calling Restore().
 	static bool Nop(const uintptr_t address, const size_t size, const bool saveBytes = true);
+
+	//Restores the bytes that were nopped at 'address'.
+	//Parameters:
+	//  address   [in] The address where the bytes will be restored.
 	static bool Restore(const uintptr_t address);
 
+	//Copies 'size' bytes from 'sourceAddress' to 'destinationAddress'.
+	//Parameters:
+	//  destinationAddress [in] The destination buffer's address.
+	//  sourceAddress      [in] The souce buffer's address.
+	//  size               [in] The number of bytes to be copied.
 	static bool Copy(const uintptr_t destinationAddress, const uintptr_t sourceAddress, const size_t size);
 
+	//Sets 'size' 'value' bytes at 'address'.
+	//Parameters:
+	//  address [in] The address where the bytes will be written to.
+	//  value   [in] The byte to be set.
+	//  size    [in] The nmber of bytes to be set.
 	static bool Set(const uintptr_t address, const int value, const size_t size);
 
+	//Compares the first 'size' bytes of 'address1' and 'address2'.
+	//Parameters:
+	//  address1 [in] the address where the first buffer is located.
+	//  address2 [in] the address where the second buffer is located.
+	//  size     [in] The number of bytes to be compared.
 	static bool Compare(const uintptr_t address1, const uintptr_t address2, const size_t size);
 
-	//outHash: A buffer capable of holding a MD5 hash which is 16 bytes.
+	//Calculates the MD5 hash of a memory region of the attached process.
+	//Parameters:
+	//  address [in]  The address where the hash will be calculated 
+	//  size    [in]  The size of the region.
+	//  outHash [out] A buffer capable of holding a MD5 hash which is 16 bytes.
 	static bool HashMD5(const uintptr_t address, const size_t size, uint8_t* const outHash);
 
+	//Scans a range of memory for a pattern. By default 'start' and 'end' 
+	//specify that the entire VAS of the attached process should be scanned.
+	//Parameters:
+	//  pattern [in] A buffer containing the pattern. An example of a
+	//               pattern is "\x68\xAB\x00\x00\x00\x00\x4F\x90\x00\x08".
+	//  mask    [in] A string that specifies how the pattern should be 
+	//               interpreted. If mask[i] is equal to '?', then the
+	//               byte pattern[i] is ignored. A example of a mask is
+	//               "xx????xxxx".
+	//  start   [in] The start address of the region to be scanned.
+	//  end     [in] The end address of the region to be scanned.
+	//  protect [in] Specifies a mask of memory protection constants
+	//               which defines what memory regions will be scanned.
+	//               The default value(-1) specifies that pages with any
+	//               protection between 'start' and 'end' should be scanned.
 	static uintptr_t PatternScan(const char* const pattern, const char* const mask, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1);
+	
+	//Scans a range of memory for an AOB. By default 'start' and 'end' 
+	//specify that the entire VAS of the attached process should be scanned.
+	//Parameters:
+	//  AOB     [in] The array of bytes(AOB) in string form. To specify
+	//               a byte that should be ignore use the '?' character.
+	//               An example of AOB is "68 AB ?? ?? ?? ?? 4F 90 00 08".
+	//  start   [in] The start address of the region to be scanned.
+	//  end     [in] The end address of the region to be scanned.
+	//  protect [in] Specifies a mask of memory protection constants
+	//               which defines what memory regions will be scanned.
+	//               The default value(-1) specifies that pages with any
+	//               protection between 'start' and 'end' should be scanned.
 	static uintptr_t AOBScan(const char* const AOB, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1);
 
+	//Scans a module for a pattern. By default the ".exe" module is scanned.
+	//Parameters:
+	//  pattern    [in] A buffer containing the pattern. An example of a
+	//                  pattern is "\x68\xAB\x00\x00\x00\x00\x4F\x90\x00\x08".
+	//  mask       [in] A string that specifies how the pattern should be 
+	//                  interpreted. If mask[i] is equal to '?', then the
+	//                  byte pattern[i] is ignored. A example of a mask is
+	//                  "xx????xxxx".
+	//  moduleName [in] The name of the module to be scanned.
+	//  protect    [in] Specifies a mask of memory protection constants
+	//                  which defines what memory regions will be scanned.
+	//                  The default value(-1) specifies that pages with any
+	//                  protection between 'start' and 'end' should be scanned.
 	static uintptr_t PatternScanModule(const char* const pattern, const char* const mask, const TCHAR* const moduleName = nullptr, const DWORD protect = -1);
+	
+	//Scans a module for a pattern. By default the ".exe" module is scanned.
+	//Parameters:
+	//  AOB        [in] The array of bytes(AOB) in string form. To specify
+	//                  a byte that should be ignore use the '?' character.
+	//                  An example of AOB is "68 AB ?? ?? ?? ?? 4F 90 00 08".
+	//  moduleName [in] The name of the module to be scanned.
+	//  protect    [in] Specifies a mask of memory protection constants
+	//                  which defines what memory regions will be scanned.
+	//                  The default value(-1) specifies that pages with any
+	//                  protection between 'start' and 'end' should be scanned.
 	static uintptr_t AOBScanModule(const char* const AOB, const TCHAR* const moduleName = nullptr, const DWORD protect = -1);
 
+	//Scans all modules for a pattern.
+	//Parameters:
+	//  pattern [in] A buffer containing the pattern. An example of a
+	//               pattern is "\x68\xAB\x00\x00\x00\x00\x4F\x90\x00\x08".
+	//  mask    [in] A string that specifies how the pattern should be 
+	//               interpreted. If mask[i] is equal to '?', then the
+	//               byte pattern[i] is ignored. A example of a mask is
+	//               "xx????xxxx".
+	//  protect [in] Specifies a mask of memory protection constants
+	//               which defines what memory regions will be scanned.
+	//               The default value(-1) specifies that pages with any
+	//               protection between 'start' and 'end' should be scanned.
 	static uintptr_t PatternScanAllModules(const char* const pattern, const char* const mask, const DWORD protect = -1);
+
+	//Scans all modules for an AOB.
+	//Parameters:
+	//  AOB     [in] The array of bytes(AOB) in string form. To specify
+	//               a byte that should be ignore use the '?' character.
+	//               An example of AOB is "68 AB ?? ?? ?? ?? 4F 90 00 08".
+	//  protect [in] Specifies a mask of memory protection constants
+	//               which defines what memory regions will be scanned.
+	//               The default value(-1) specifies that pages with any
+	//               protection between 'start' and 'end' should be scanned.
 	static uintptr_t AOBScanAllModules(const char* const AOB, const DWORD protect = -1);
 
+	//Reads a multilevel pointer.
+	//Parameters:
+	//  base    [in] The base address.
+	//  offsets [in] A vector specifying the offsets.
 	static uintptr_t ReadMultiLevelPointer(const uintptr_t base, const std::vector<uint32_t>& offsets);
 
 	static bool Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0);
 
+	//Removes a previously placed hook at 'address'.
+	//Parameters:
+	//  address [in] The address to be unhooked.
 	static bool Unhook(const uintptr_t address);
 
+	//Scans a range of memory to find a code cave.
+	//Parameters:
+	//  size       [in] The size of the code cave.
+	//  nullByte   [in] The byte of the code cave.
+	//  start      [in] The start address of the region to be scanned.
+	//  end        [in] The end address of the region to be scanned.
+	//  protection [in] Specifies a mask of memory protection constants
+	//                  which defines what memory regions will be scanned.
+	//                  The default value(-1) specifies that pages with any
+	//                  protection between 'start' and 'end' should be scanned.
 	static uintptr_t FindCodeCave(const size_t size, const uint8_t nullByte = static_cast<uint8_t>(0x00), uintptr_t start = 0, const uintptr_t end = -1, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY);
 
+	//Scans a range of memory to find a code cave.
+	//Parameters:
+	//  size        [in] The size of the code cave.
+	//  nullBytes   [in] The byte of the code cave.
+	//  start       [in] The start address of the region to be scanned.
+	//  end         [in] The end address of the region to be scanned.
+	//  protection  [in] Specifies a mask of memory protection constants
+	//                   which defines what memory regions will be scanned.
+	//                   The default value(-1) specifies that pages with any
+	//                   protection between 'start' and 'end' should be scanned.
 	static uintptr_t FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes = { 0x00 }, uint8_t* const pNullByte = nullptr, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY);
 
+	//Returns the PID of the specified process.
+	//Parameters:
+	//  processName [in] The name of the process.
 	static DWORD GetProcessIdByName(const TCHAR* const processName);
+
+	//Returns the PID of the window's owner.
+	//Parameters:
+	//  windowName [in] The window's title. If NULL, all window 
+	//                  names match.
+	//  className  [in] The class name. If NULL, any window title
+	//                  matching windowName is considered.
 	static DWORD GetProcessIdByWindow(const TCHAR* const windowName, const TCHAR* const className = nullptr);
 
 	//If moduleName is NULL, GetModuleBase() returns the base of the module created by the file used to create the process specified (.exe file)
+	//Returns a module's base address on the attached process.
+	//Parameters:
+	//  moduleName  [in]  The name of the module.
+	//  pModuleSize [out] An optional pointer that if provided, receives the size of the module.
 	static uintptr_t GetModuleBase(const TCHAR* const moduleName = nullptr, DWORD* const pModuleSize = nullptr);
 
-	//address on the virtual address space of the current process.
+	//Returns the size of first parsed instruction on the buffer at 'address'.
+	//Parameters:
+	//  address [in] The address of the buffer on the current processe's VAD containing instruction.
 	static size_t GetInstructionLength(const void* const address);
 
+	//Loops through all modules of a process passing its information to a callback function.
+	//Parameters:
+	//  processId [in] The PID of the process which the modules will be looped.
+	//  callback  [in] A function pointer to a callback function.
+	//  param     [in] An optional pointer to be passed to the callback.
 	static void EnumModules(const DWORD processId, bool (*callback)(MODULEENTRY32& me, void* param), void* param);
 
+	//Converts an AOB in string form into pattern & mask form.
+	//Parameters:
+	//  AOB     [in]  The array of bytes(AOB) in string form.
+	//  pattern [out] The string that will receive the pattern.
+	//  mask    [out] The string that will receive th mask.
 	static void AOBToPattern(const char* const AOB, std::string& pattern, std::string& mask);
 private:
 	static void PatternScanImpl(std::atomic<uintptr_t>& returnValue, std::atomic<size_t>& finishCount, const uint8_t* const pattern, const char* const mask, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1);
