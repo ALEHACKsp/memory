@@ -201,7 +201,7 @@ uintptr_t MemIn::PatternScan(const char* const pattern, const char* const mask, 
 {
 	std::atomic<uintptr_t> address = 0; std::atomic<size_t> finishCount = 0;
 
-#if ENABLE_PATTERN_SCAN_MULTITHREADING
+#if PATTERN_SCAN_IN_MULTITHREADING
 	auto numThreads = std::thread::hardware_concurrency();
 	if (!numThreads)
 		numThreads = 1;

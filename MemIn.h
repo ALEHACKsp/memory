@@ -4,7 +4,7 @@
 #ifndef MEMIN_H
 #define MEMIN_H
 
-#define ENABLE_PATTERN_SCAN_MULTITHREADING 1
+#define PATTERN_SCAN_IN_MULTITHREADING 1
 
 #include <Windows.h>
 #include <memory>

@@ -13,7 +13,7 @@
 #include <TlHelp32.h>
 #include <memory>
 
-#define ENABLE_PATTERN_SCAN_MULTITHREADING 1
+#define PATTERN_SCAN_EX_MULTITHREADING 1
 
 #define HOOK_MARK_END __asm _emit 0xD6 __asm _emit 0xD6 __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0xD6 __asm _emit 0xD6
 

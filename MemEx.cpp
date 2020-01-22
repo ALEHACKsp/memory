@@ -260,7 +260,7 @@ uintptr_t MemEx::PatternScan(const char* const pattern, const char* const mask, 
 {
 	std::atomic<uintptr_t> address = 0; std::atomic<size_t> finishCount = 0;
 
-#if ENABLE_PATTERN_SCAN_MULTITHREADINGa
+#if PATTERN_SCAN_EX_MULTITHREADING
 	auto numThreads = std::thread::hardware_concurrency();
 	if (!numThreads)
 		numThreads = 1;
