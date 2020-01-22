@@ -5,7 +5,6 @@
 #define MEMIN_H
 
 #define ENABLE_PATTERN_SCAN_MULTITHREADING 1
-#define USE_CODE_CAVE_AS_MEMORY 0
 
 #include <Windows.h>
 #include <memory>
@@ -20,6 +19,20 @@
 #define GPR 0x01
 #define FLAGS 0x02
 #define XMMX 0x04
+
+enum class HOOK_IN_ALLOCATION_METHOD
+{
+	NEW_OPERATOR,
+	CODE_CAVE,
+	USER_BUFFER
+};
+
+//This is a macro that helps to specify a list of null bytes on the data parameter of the Hook() function
+//Usage:
+//  NULL_BYTES( ( { 0x10, 0x20, 0x30 } ) )
+//Example:
+//  MemIn::Hook(reinterpret_cast<uintptr_t>(MessageBoxA), OurMessageBoxA, reinterpret_cast<uintptr_t*>(&oMessageBoxA), NULL, HOOK_ALLOCATION_METHOD::CODE_CAVE, NULL_BYTES(({ 0x40, 0x51 })));
+#define NULL_BYTES(list) &std::vector<uint8_t>list
 
 class MemIn
 {
@@ -44,9 +57,11 @@ class MemIn
 
 	struct HookStruct
 	{
-		uintptr_t trampoline = 0;
+		uintptr_t buffer = 0;
 		uint8_t trampolineSize = 0;
 		uint8_t saveCpuStateBufferSize = 0;
+		HOOK_IN_ALLOCATION_METHOD allocationMethod = HOOK_IN_ALLOCATION_METHOD::NEW_OPERATOR;
+		uint8_t codeCaveNullByte = 0;
 	};
 
 	//Store addresses/bytes which the user nopped so they can be restored later with Patch()
@@ -224,7 +239,33 @@ public:
 	//  offsets [in] A vector specifying the offsets.
 	static uintptr_t ReadMultiLevelPointer(const uintptr_t base, const std::vector<uint32_t>& offsets);
 
-	static bool Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0);
+	//Hooks an address.
+	//Parameters:
+	//  address          [in]     The address to be hooked.
+	//  callback         [in]     The callback to be executed when the CPU executes 'address'.
+	//  trampoline       [in]     An optional pointer to a variable that receives the address
+	//                            of the trampoline. The trampoline contains the original replaced
+	//                            instructions of the 'address' and a jump back to 'address'.
+	//  saveCpuStateMask [in]     A mask containing a bitwise OR combination of one or more of
+	//                            the following macros: GPR(general purpose registers),
+	//                            FLAGS(eflags/rflags), XMMX(xmm0, xmm1, xmm2, xmm3, xmm4, xmm5).
+	//                            Push the CPU above states to the stack before executing callback.
+	//                            You should use this parameter if you perform a mid function hook.
+	//                            By default no CPU state is saved.
+	//  allocationMethod [in]     Specifies what method of memory allocation should be used to store
+	//                            the trampoline. By default the new operator is used to dynamically
+	//                            allocate space for the trampoline.
+	//  data             [in/out] The meaning of this parameter depends on the value of allocationMethod.
+	//                            This parameter is ignored if allocationMethod is NEW_OPERATOR. If
+	//                            allocationMethod is CODE_CAVE, this parameter can specify a vector of nullbytes
+	//                            to be used in the FindCodeCave() function(it's recommended that you use the
+	//                            NULL_BYTES() macro to specify the null bytes), otherwise if 'data' is NULL,
+	//                            Hook() looks for a codecode where the null bytes are 0x00 and 0xCC.
+	//                            If allocation method is USER_BUFFER and callback is NULL, data is
+	//                            pointer to a variable of type size_t that receives the minimum size needed
+	//                            to store the trampoline, otherwise if callback is not NULL, data specifies
+	//                            a pointer to a user buffer used to store the trampoline.
+	static bool Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0, const HOOK_IN_ALLOCATION_METHOD allocationMethod = HOOK_IN_ALLOCATION_METHOD::NEW_OPERATOR, void* const data = nullptr);
 
 	//Removes a previously placed hook at 'address'.
 	//Parameters:

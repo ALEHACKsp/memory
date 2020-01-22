@@ -296,7 +296,7 @@ uintptr_t MemIn::ReadMultiLevelPointer(uintptr_t base, const std::vector<uint32_
 
 /*If you perform a mid function hook(the saveCpuStateMask is not zero),
 you should not use the trampoline to try execute the rest of the original function.*/
-bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline, const DWORD saveCpuStateMask)
+bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline, const DWORD saveCpuStateMask, const HOOK_IN_ALLOCATION_METHOD allocationMethod, void* const data)
 {
 	ProtectRegion pr(address, HOOK_MAX_NUM_REPLACED_BYTES);
 	if(!pr.Success())
@@ -310,16 +310,33 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 	const size_t trampolineSize = numReplacedBytes + HOOK_JUMP_SIZE;
 	const size_t bufferSize = saveCpuStateBufferSize + trampolineSize;
 
-	//Allocate buffer to store the saveCpuStateBuffer and the trampoline
-	uintptr_t bufferAddress = NULL; DWORD oldProtect;
-	if (!(bufferAddress =
-#if USE_CODE_CAVE_AS_MEMORY
-		FindCodeCave(bufferSize)
-#else
-		reinterpret_cast<uintptr_t>(new uint8_t[bufferSize])
-#endif
-		) || !VirtualProtect(reinterpret_cast<LPVOID>(bufferAddress), bufferSize, PAGE_EXECUTE_READWRITE, &oldProtect))
-		{ return false; }
+	//Allocate buffer to store the saveCpuStateBuffer and the trampoline.
+	uintptr_t bufferAddress = NULL; uint8_t codeCaveNullByte = 0;
+	switch (allocationMethod)
+	{
+	case HOOK_IN_ALLOCATION_METHOD::NEW_OPERATOR:
+		bufferAddress = reinterpret_cast<uintptr_t>(new uint8_t[bufferSize]);
+		break;
+	case HOOK_IN_ALLOCATION_METHOD::CODE_CAVE:
+		if (data)
+			bufferAddress = FindCodeCaveBatch(bufferSize, *reinterpret_cast<const std::vector<uint8_t>*>(data), &codeCaveNullByte);
+		else
+			bufferAddress = FindCodeCaveBatch(bufferSize, { 0x00, 0xCC }, &codeCaveNullByte);
+		break;
+	case HOOK_IN_ALLOCATION_METHOD::USER_BUFFER:
+		if (callback)
+			bufferAddress = reinterpret_cast<uintptr_t>(data);
+		else
+		{
+			*reinterpret_cast<size_t*>(data) = bufferSize;
+			return true;
+		}
+	}
+
+	//The call to memset is here just to prevent the "Using unitialized memory bufferAddress" warning. IKR
+	DWORD oldProtect;
+	if (!bufferAddress || !memset(reinterpret_cast<void*>(bufferAddress), 0, 1) || !VirtualProtect(reinterpret_cast<LPVOID>(bufferAddress), bufferSize, PAGE_EXECUTE_READWRITE, &oldProtect))
+		return false;
 
 	uint8_t* buffer = reinterpret_cast<uint8_t*>(bufferAddress);
 	if (saveCpuStateMask)
@@ -402,10 +419,17 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 	PLACE1(0xE9); PLACE4(static_cast<ptrdiff_t>((saveCpuStateMask) ? bufferAddress : reinterpret_cast<uintptr_t>(callback)) - reinterpret_cast<ptrdiff_t>(buffer + 4));
 #endif
 
-	m_Hooks[address] = { bufferAddress, static_cast<uint8_t>(trampolineSize), static_cast<uint8_t>(saveCpuStateBufferSize) };
+	HookStruct hook;
+	hook.buffer = bufferAddress;
+	hook.saveCpuStateBufferSize = static_cast<uint8_t>(saveCpuStateBufferSize);
+	hook.trampolineSize = static_cast<uint8_t>(trampolineSize);
+	hook.allocationMethod = allocationMethod;
+	hook.codeCaveNullByte = codeCaveNullByte;
+
+	m_Hooks[address] = hook;
 
 	if (trampoline)
-		*trampoline = saveCpuStateMask ? bufferAddress + saveCpuStateBufferSize : bufferAddress;
+		*trampoline = bufferAddress + saveCpuStateBufferSize;
 
 	return static_cast<bool>(FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<LPCVOID>(address), static_cast<SIZE_T>(numReplacedBytes)));
 }
@@ -413,18 +437,17 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 bool MemIn::Unhook(const uintptr_t address)
 {
 	ProtectRegion pr(address, static_cast<SIZE_T>(m_Hooks[address].trampolineSize - HOOK_JUMP_SIZE));
-	if (!pr.Success())
+	if (!pr.Success() || !m_Hooks[address].buffer)
 		return false;
 
 	//Restore original instruction(s)
-	memcpy(reinterpret_cast<void*>(address), reinterpret_cast<const void*>(m_Hooks[address].trampoline + m_Hooks[address].saveCpuStateBufferSize), m_Hooks[address].trampolineSize - HOOK_JUMP_SIZE);
+	memcpy(reinterpret_cast<void*>(address), reinterpret_cast<const void*>(m_Hooks[address].buffer + m_Hooks[address].saveCpuStateBufferSize), m_Hooks[address].trampolineSize - HOOK_JUMP_SIZE);
 
-	//Free memory used to the buffer(i.e. saveCpuStateBuffer and trampoline)
-#if USE_CODE_CAVE_AS_MEMORY
-	memset(reinterpret_cast<void*>(m_Hooks[address].trampoline), 0xCC, static_cast<size_t>(m_Hooks[address].trampolineSize) + m_Hooks[address].saveCpuStateBufferSize);
-#else
-	delete[] reinterpret_cast<uint8_t*>(m_Hooks[address].trampoline);
-#endif
+	//Free memory used to store the buffer(i.e. saveCpuStateBuffer and trampoline)
+	if (m_Hooks[address].allocationMethod == HOOK_IN_ALLOCATION_METHOD::NEW_OPERATOR)
+		delete[] reinterpret_cast<uint8_t*>(m_Hooks[address].buffer);
+	else if (m_Hooks[address].allocationMethod == HOOK_IN_ALLOCATION_METHOD::CODE_CAVE)
+		memset(reinterpret_cast<void*>(m_Hooks[address].buffer), m_Hooks[address].codeCaveNullByte, static_cast<size_t>(m_Hooks[address].saveCpuStateBufferSize) + m_Hooks[address].trampolineSize);
 
 	m_Hooks.erase(address);
 

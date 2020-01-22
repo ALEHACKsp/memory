@@ -14,7 +14,6 @@
 #include <memory>
 
 #define ENABLE_PATTERN_SCAN_MULTITHREADING 1
-#define USE_CODE_CAVE_AS_MEMORY 0
 
 #define HOOK_MARK_END __asm _emit 0xD6 __asm _emit 0xD6 __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0xD6 __asm _emit 0xD6
 
@@ -61,6 +60,18 @@ enum class CConv
 #define FLAGS 0x02
 #define XMMX 0x04
 
+enum class HOOK_EX_ALLOCATION_METHOD
+{
+	SHARED_MEMORY,
+	CODE_CAVE,
+	USER_BUFFER
+};
+
+//This is a macro that helps to specify a list of null bytes on the data parameter of the Hook() function
+//Usage:
+//  NULL_BYTES( ( { 0x10, 0x20, 0x30 } ) )
+#define NULL_BYTES(list) &std::vector<uint8_t>list
+
 class MemEx
 {
 	struct Nop
@@ -75,6 +86,8 @@ class MemEx
 		uint16_t callbackSize = 0;
 		uint8_t trampolineSize = 0;
 		uint8_t saveCpuStateBufferSize = 0;
+		HOOK_EX_ALLOCATION_METHOD allocationMethod = HOOK_EX_ALLOCATION_METHOD::SHARED_MEMORY;
+		uint8_t codeCaveNullByte = 0;
 	};
 
 	HANDLE m_hProcess; // A handle to the target process.
@@ -344,14 +357,39 @@ public:
 		return *static_cast<TyRet*>(CallImpl(cConv, std::is_same<TyRet, float>::value, std::is_same<TyRet, double>::value, sizeof(TyRet), address, args));
 	}
 	
-	bool Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0);
+	//Hooks an address.
+	//Parameters:
+	//  address          [in]     The address to be hooked.
+	//  callback         [in]     The callback to be executed when the CPU executes 'address'.
+	//  trampoline       [in]     An optional pointer to a variable that receives the address
+	//                            of the trampoline. The trampoline contains the original replaced
+	//                            instructions of the 'address' and a jump back to 'address'.
+	//  saveCpuStateMask [in]     A mask containing a bitwise OR combination of one or more of
+	//                            the following macros: GPR(general purpose registers),
+	//                            FLAGS(eflags/rflags), XMMX(xmm0, xmm1, xmm2, xmm3, xmm4, xmm5).
+	//                            Push the CPU above states to the stack before executing callback.
+	//                            You should use this parameter if you perform a mid function hook.
+	//                            By default no CPU state is saved.
+	//  allocationMethod [in]     Specifies what method of memory allocation should be used to store
+	//                            the trampoline. By default shared memory is used to store the trampoline.
+	//  data             [in/out] The meaning of this parameter depends on the value of allocationMethod.
+	//                            This parameter is ignored if allocationMethod is SHARED_MEMORY. If
+	//                            allocationMethod is CODE_CAVE, this parameter can specify a vector of nullbytes
+	//                            to be used in the FindCodeCave() function(it's recommended that you use the
+	//                            NULL_BYTES() macro to specify the null bytes), otherwise if 'data' is NULL,
+	//                            Hook() looks for a codecode where the null bytes are 0x00 and 0xCC.
+	//                            If allocation method is USER_BUFFER and callback is NULL, data is
+	//                            pointer to a variable of type size_t that receives the minimum size needed
+	//                            to store the trampoline, otherwise if callback is not NULL, data specifies
+	//                            a pointer to a user buffer used to store the trampoline.
+	bool Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0, const HOOK_EX_ALLOCATION_METHOD allocationMethod = HOOK_EX_ALLOCATION_METHOD::SHARED_MEMORY, void* const data = nullptr);
 
 	//Array of bytes with known size at compile time
 	template <class _Ty, size_t callbackSize>
-	bool Hook(const uintptr_t address, _Ty(&callback)[callbackSize], uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0) { return Hook(address, callback, callbackSize, trampoline, saveCpuStateMask); };
+	bool Hook(const uintptr_t address, _Ty(&callback)[callbackSize], uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0, const HOOK_EX_ALLOCATION_METHOD allocationMethod = HOOK_EX_ALLOCATION_METHOD::SHARED_MEMORY, void* const data = nullptr) { return Hook(address, callback, callbackSize, trampoline, saveCpuStateMask, allocationMethod, data); };
 
-	bool Hook(const uintptr_t address, const void* const callback, const size_t callbackSize, uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0);
-	
+	bool Hook(const uintptr_t address, const void* const callback, const size_t callbackSize, uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0, const HOOK_EX_ALLOCATION_METHOD allocationMethod = HOOK_EX_ALLOCATION_METHOD::SHARED_MEMORY, void* const data = nullptr);
+
 	//Removes a previously placed hook at 'address'.
 	//Parameters:
 	//  address [in] The address to be unhooked.
