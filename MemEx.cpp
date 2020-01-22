@@ -30,6 +30,8 @@
 	#define CALCULATE_SAVE_CPU_STATE_BUFFER_SIZE(mask) ((mask ? HOOK_JUMP_SIZE : 0) + (mask & FLAGS ? 2 : 0) + (mask & GPR ? 2 : 0) + (mask & XMMX ? 76 : 0))
 #endif
 
+#define X86_MAXIMUM_INSTRUCTION_LENGTH 15
+
 //LDE
 #define R (*b >> 4) // Four high-order bits of an opcode to index a row of the opcode table
 #define C (*b & 0xF) // Four low-order bits to index a column of the table
@@ -370,7 +372,7 @@ bool MemEx::Hook(const uintptr_t address, const void* const callback, const size
 
 	size_t numReplacedBytes = 0;
 	while (numReplacedBytes < HOOK_JUMP_SIZE)
-		numReplacedBytes += GetInstructionLength(originalCode + numReplacedBytes);
+		numReplacedBytes += GetInstructionLength(address + numReplacedBytes);
 
 	const size_t saveCpuStateBufferSize = CALCULATE_SAVE_CPU_STATE_BUFFER_SIZE(saveCpuStateMask);
 	const size_t trampolineSize = numReplacedBytes + HOOK_JUMP_SIZE;
@@ -769,11 +771,15 @@ uintptr_t MemEx::GetModuleBase(const DWORD dwProcessId, const TCHAR* const modul
 }
 
 //https://github.com/Nomade040/length-disassembler
-size_t MemEx::GetInstructionLength(const void* const address)
+size_t MemEx::GetInstructionLength(const uintptr_t address)
 {
+	uint8_t buffer[X86_MAXIMUM_INSTRUCTION_LENGTH];
+	if (!Read(address, buffer, X86_MAXIMUM_INSTRUCTION_LENGTH))
+		return 0;
+
 	size_t offset = 0;
 	bool operandPrefix = false, addressPrefix = false, rexW = false;
-	uint8_t* b = (uint8_t*)(address);
+	uint8_t* b = (uint8_t*)(buffer);
 
 	//Parse legacy prefixes & REX prefixes
 #if UINTPTR_MAX == UINT64_MAX
