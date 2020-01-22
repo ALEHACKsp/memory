@@ -1,3 +1,4 @@
+//Every address parameter is in the context of the virtual address space of the current process unless explicity stated otherwise.
 #pragma once
 
 #ifndef MEMIN_H
@@ -54,10 +55,9 @@ class MemIn
 	static std::unordered_map<uintptr_t, HookStruct> m_Hooks;
 
 public:
-	//Returns a copy of the data.
+	//Returns a copy of the data at 'address'.
 	//Parameters:
-	//  address [in] The address on the VAS of the current 
-	//               process where the bytes will be read from.
+	//  address [in] The address where the bytes will be read from.
 	template <typename T>
 	static inline T Read(const uintptr_t address)
 	{
@@ -80,7 +80,7 @@ public:
 	template <typename T>
 	static inline bool Write(const uintptr_t address, const T& value) { return Write(address, &value, sizeof(T)); }
 
-	//Copies 'size' bytes from 'buffer' on the current process to 'address' on the attached process.
+	//Copies 'size' bytes from 'buffer' to 'address'.
 	//Parameters:
 	//  address [in] The address where the bytes will be copied to.
 	//  buffer  [in] The buffer where the bytes will be copied from.
@@ -130,13 +130,13 @@ public:
 
 	//Calculates the MD5 hash of a memory region of the attached process.
 	//Parameters:
-	//  address [in]  The address where the hash will be calculated 
+	//  address [in]  The address where the hash will be calculated.
 	//  size    [in]  The size of the region.
 	//  outHash [out] A buffer capable of holding a MD5 hash which is 16 bytes.
 	static bool HashMD5(const uintptr_t address, const size_t size, uint8_t* const outHash);
 
 	//Scans a range of memory for a pattern. By default 'start' and 'end' 
-	//specify that the entire VAS of the attached process should be scanned.
+	//specify that the entire address space should be scanned.
 	//Parameters:
 	//  pattern [in] A buffer containing the pattern. An example of a
 	//               pattern is "\x68\xAB\x00\x00\x00\x00\x4F\x90\x00\x08".
@@ -153,7 +153,7 @@ public:
 	static uintptr_t PatternScan(const char* const pattern, const char* const mask, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1);
 	
 	//Scans a range of memory for an AOB. By default 'start' and 'end' 
-	//specify that the entire VAS of the attached process should be scanned.
+	//specify that the entire address space should be scanned.
 	//Parameters:
 	//  AOB     [in] The array of bytes(AOB) in string form. To specify
 	//               a byte that should be ignore use the '?' character.
@@ -181,7 +181,7 @@ public:
 	//                  protection between 'start' and 'end' should be scanned.
 	static uintptr_t PatternScanModule(const char* const pattern, const char* const mask, const TCHAR* const moduleName = nullptr, const DWORD protect = -1);
 	
-	//Scans a module for a pattern. By default the ".exe" module is scanned.
+	//Scans a module for an AOB. By default the ".exe" module is scanned.
 	//Parameters:
 	//  AOB        [in] The array of bytes(AOB) in string form. To specify
 	//                  a byte that should be ignore use the '?' character.
@@ -245,14 +245,14 @@ public:
 
 	//Scans a range of memory to find a code cave.
 	//Parameters:
-	//  size        [in] The size of the code cave.
-	//  nullBytes   [in] The byte of the code cave.
-	//  start       [in] The start address of the region to be scanned.
-	//  end         [in] The end address of the region to be scanned.
-	//  protection  [in] Specifies a mask of memory protection constants
-	//                   which defines what memory regions will be scanned.
-	//                   The default value(-1) specifies that pages with any
-	//                   protection between 'start' and 'end' should be scanned.
+	//  size       [in] The size of the code cave.
+	//  nullBytes  [in] The byte of the code cave.
+	//  start      [in] The start address of the region to be scanned.
+	//  end        [in] The end address of the region to be scanned.
+	//  protection [in] Specifies a mask of memory protection constants
+	//                  which defines what memory regions will be scanned.
+	//                  The default value(-1) specifies that pages with any
+	//                  protection between 'start' and 'end' should be scanned.
 	static uintptr_t FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes = { 0x00 }, uint8_t* const pNullByte = nullptr, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY);
 
 	//Returns the PID of the specified process.
@@ -277,7 +277,7 @@ public:
 
 	//Returns the size of first parsed instruction on the buffer at 'address'.
 	//Parameters:
-	//  address [in] The address of the buffer on the current processe's VAD containing instruction.
+	//  address [in] The address of the buffer containing instruction.
 	static size_t GetInstructionLength(const void* const address);
 
 	//Loops through all modules of a process passing its information to a callback function.

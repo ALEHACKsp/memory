@@ -1,4 +1,5 @@
-#pragma once
+//Every parameter of 'uintptr_t' type refers to an address in the context of the virtual address space of the attached process.
+//Every parameter of pointer type refer to an address/pointer/buffer in the context of the virtual address space of the current process.
 
 #ifndef MEMEX_H
 #define MEMEX_H
@@ -159,10 +160,9 @@ public:
 	//Returns the PID of the attached process.
 	DWORD GetPid() const;
 
-	//Returns a copy of the data.
+	//Returns a copy of the data at 'address'.
 	//Parameters:
-	//  address [in]  The address on the VAS of the attached 
-	//                process where the bytes will be read from.
+	//  address [in]  The address where the bytes will be read from.
 	template <typename T>
 	inline T Read(const uintptr_t address) const
 	{
@@ -172,45 +172,37 @@ public:
 		return t;
 	}
 
-	//Copies 'size' bytes from 'address' on the attached process to 'buffer' on the current process.
+	//Copies 'size' bytes from 'address' to 'buffer'.
 	//Parameters:
-	//  address [in]  The address on the VAS of the attached process
-	//                where the bytes will be copied from.
-	//  buffer  [out] The buffer on the current process where the bytes will 
-	//                be copied to.
+	//  address [in]  The address where the bytes will be copied from.
+	//  buffer  [out] The buffer where the bytes will be copied to.
 	//  size    [in]  The number of bytes to be copied.
 	bool Read(const uintptr_t address, void* const buffer, const SIZE_T size) const;
 
 	//Copies 'value' to 'address'.
 	//Parameters:
-	//  address [in] The address on the VAS of the attached process
-	//               where the bytes will be copied to.
+	//  address [in] The address where the bytes will be copied to.
 	//  value   [in] The value where the bytes will be copied from.
 	template <typename T>
 	inline bool Write(uintptr_t address, const T& value) const { return Write(address, &value, sizeof(T)); }
 
-	//Copies 'size' bytes from 'buffer' on the current process to 'address' on the attached process.
+	//Copies 'size' bytes from 'buffer' to 'address'.
 	//Parameters:
-	//  address [in] The address on the VAS of the attached process
-	//               where the bytes will be copied to.
-	//  buffer  [in] The buffer on the current process where the bytes
-	//               will be copied from.
+	//  address [in] The address where the bytes will be copied to.
+	//  buffer  [in] The buffer where the bytes will be copied from.
 	//  size    [in] The number of bytes to be copied.
 	bool Write(uintptr_t address, const void* const buffer, const SIZE_T size) const;
 
 	//Patches 'address' with 'size' bytes stored on 'bytes'.
 	//Parameters:
-	//  address [in] The address on the VAS of the
-	//               attached process where the bytes will be copied to.
-	//  buffer  [in] The buffer on the current process where the bytes
-	//               will be copied from.
+	//  address [in] The address where the bytes will be copied to.
+	//  buffer  [in] The buffer where the bytes will be copied from.
 	//  size    [in] The number of bytes to be copied.
 	bool Patch(const uintptr_t address, const char* const bytes, const size_t size) const;
 
-	//Writes 'size' 0x90 bytes at address.
+	//Writes 'size' 0x90(opcode for the NOP(no operation) instruction) bytes at address.
 	//Parameters:
-	//  address   [in] The address on the VAS of the
-	//                 attached process where the bytes will be nopped.
+	//  address   [in] The address where the bytes will be nopped.
 	//  size      [in] The number of bytes to be written.
 	//  saveBytes [in] If true, save the original bytes located at 'address'
 	//                 where they can be later restored by calling Restore().
@@ -218,46 +210,39 @@ public:
 
 	//Restores the bytes that were nopped at 'address'.
 	//Parameters:
-	//  address   [in] The address on the VAS of the
-	//                 attached process where the bytes will be restored.
+	//  address   [in] The address where the bytes will be restored.
 	bool Restore(const uintptr_t address);
 
 	//Copies 'size' bytes from 'sourceAddress' to 'destinationAddress'.
 	//Parameters:
-	//  destinationAddress [in] The destination buffer's address on the 
-	//                          attached process's VAS.
-	//  sourceAddress      [in] The souce buffer's address on the 
-	//                          attached process's VAS.
+	//  destinationAddress [in] The destination buffer's address.
+	//  sourceAddress      [in] The souce buffer's address.
 	//  size               [in] The number of bytes to be copied.
 	bool Copy(const uintptr_t destinationAddress, const uintptr_t sourceAddress, const size_t size) const;
 
 	//Sets 'size' 'value' bytes at 'address'.
 	//Parameters:
-	//  address [in] The address on the attached process's VAS where
-	//               the bytes will be written to.
+	//  address [in] The address where the bytes will be written to.
 	//  value   [in] The byte to be set.
 	//  size    [in] The nmber of bytes to be set.
 	bool Set(const uintptr_t address, const int value, const size_t size) const;
 
 	//Compares the first 'size' bytes of 'address1' and 'address2'.
 	//Parameters:
-	//  address1 [in] the address on the attached processes's VAS where
-	//                where the first buffer is located.
-	//  address2 [in] the address on the attached processes's VAS where
-	//                where the second buffer is located.
+	//  address1 [in] the address where the first buffer is located.
+	//  address2 [in] the address where the second buffer is located.
 	//  size     [in] The number of bytes to be compared.
 	bool Compare(const uintptr_t address1, const uintptr_t address2, const size_t size) const;
 
 	//Calculates the MD5 hash of a memory region of the attached process.
 	//Parameters:
-	//  address [in]  The address on the attached process of the region where the hash will be calculated 
+	//  address [in]  The address where the hash will be calculated.
 	//  size    [in]  The size of the region.
 	//  outHash [out] A buffer capable of holding a MD5 hash which is 16 bytes.
 	bool HashMD5(const uintptr_t address, const size_t size, uint8_t* const outHash) const;
 
-	//Scans a range of memory for a pattern on the attached process. By
-	//default 'start' and 'end' specify that the entire VAS of the attached
-	//process should be scanned.
+	//Scans a range of memory for a pattern. By default 'start' and 'end' 
+	//specify that the entire address space should be scanned.
 	//Parameters:
 	//  pattern [in] A buffer containing the pattern. An example of a
 	//               pattern is "\x68\xAB\x00\x00\x00\x00\x4F\x90\x00\x08".
@@ -273,9 +258,8 @@ public:
 	//               protection between 'start' and 'end' should be scanned.
 	uintptr_t PatternScan(const char* const pattern, const char* const mask, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1) const;
 	
-	//Scans a range of memory for an AOB on the attached process. By
-	//default 'start' and 'end' specify that the entire VAS of the attached
-	//process should be scanned.
+	//Scans a range of memory for an AOB. By default 'start' and 'end' 
+	//specify that the entire address space should be scanned.
 	//Parameters:
 	//  AOB     [in] The array of bytes(AOB) in string form. To specify
 	//               a byte that should be ignore use the '?' character.
@@ -288,8 +272,7 @@ public:
 	//               protection between 'start' and 'end' should be scanned.
 	uintptr_t AOBScan(const char* const AOB, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1) const;
 
-	//Scans a module for a pattern on the attached process. By default
-	//the ".exe" module is scanned.
+	//Scans a module for a pattern. By default the ".exe" module is scanned.
 	//Parameters:
 	//  pattern    [in] A buffer containing the pattern. An example of a
 	//                  pattern is "\x68\xAB\x00\x00\x00\x00\x4F\x90\x00\x08".
@@ -304,8 +287,7 @@ public:
 	//                  protection between 'start' and 'end' should be scanned.
 	uintptr_t PatternScanModule(const char* const pattern, const char* const mask, const TCHAR* const moduleName = nullptr, const DWORD protect = -1) const;
 	
-	//Scans a module for a pattern on the attached process. By default
-	//the ".exe" module is scanned.
+	//Scans a module for an AOB. By default the ".exe" module is scanned.
 	//Parameters:
 	//  AOB        [in] The array of bytes(AOB) in string form. To specify
 	//                  a byte that should be ignore use the '?' character.
@@ -317,7 +299,7 @@ public:
 	//                  protection between 'start' and 'end' should be scanned.
 	uintptr_t AOBScanModule(const char* const AOB, const TCHAR* const moduleName = nullptr, const DWORD protect = -1) const;
 
-	//Scans all modules for a pattern on the attached process.
+	//Scans all modules for a pattern.
 	//Parameters:
 	//  pattern [in] A buffer containing the pattern. An example of a
 	//               pattern is "\x68\xAB\x00\x00\x00\x00\x4F\x90\x00\x08".
@@ -370,12 +352,12 @@ public:
 
 	bool Hook(const uintptr_t address, const void* const callback, const size_t callbackSize, uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0);
 	
-	//Removes a previously placed hook at 'address' on the attached process.
+	//Removes a previously placed hook at 'address'.
 	//Parameters:
-	//  address [in] The address on the attached processe's VAD to be unhooked.
+	//  address [in] The address to be unhooked.
 	bool Unhook(const uintptr_t address);
 	
-	//Scans a range of memory to find a code cave on the attached process.
+	//Scans a range of memory to find a code cave.
 	//Parameters:
 	//  size       [in] The size of the code cave.
 	//  nullByte   [in] The byte of the code cave.
@@ -387,16 +369,16 @@ public:
 	//                  protection between 'start' and 'end' should be scanned.
 	uintptr_t FindCodeCave(const size_t size, const uint8_t nullByte = static_cast<uint8_t>(0x00), uintptr_t start = 0, const uintptr_t end = -1, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
 
-	//Scans a range of memory to find a code cave on the attached process.
+	//Scans a range of memory to find a code cave.
 	//Parameters:
-	//  size        [in] The size of the code cave.
-	//  nullBytes   [in] The byte of the code cave.
-	//  start       [in] The start address of the region to be scanned.
-	//  end         [in] The end address of the region to be scanned.
-	//  protection  [in] Specifies a mask of memory protection constants
-	//                   which defines what memory regions will be scanned.
-	//                   The default value(-1) specifies that pages with any
-	//                   protection between 'start' and 'end' should be scanned.
+	//  size       [in] The size of the code cave.
+	//  nullBytes  [in] The byte of the code cave.
+	//  start      [in] The start address of the region to be scanned.
+	//  end        [in] The end address of the region to be scanned.
+	//  protection [in] Specifies a mask of memory protection constants
+	//                  which defines what memory regions will be scanned.
+	//                  The default value(-1) specifies that pages with any
+	//                  protection between 'start' and 'end' should be scanned.
 	uintptr_t FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes = {}, uint8_t* const pNullByte = nullptr, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
 
 	//Creates and returns a handle to an unnamed file-mapping object backed by the system's 
@@ -415,20 +397,20 @@ public:
 	//  remoteView   [in] The remote view.
 	bool FreeSharedMemory(HANDLE hFileMapping, LPCVOID localView, LPCVOID remoteView) const;
 
-	//Maps a view of a file-mapping object on the VAS of the current process.
+	//Maps a view of a file-mapping object on the address space of the current process.
 	//Internally, it's a wrapper around MapViewOfFile().
 	//Parameters:
 	//  hFileMapping [in] A handle to a file-mapping object created by
 	//                    AllocateSharedMemory() or CreateSharedMemory().
 	static PVOID MapLocalViewOfFile(const HANDLE hFileMapping);
 
-	//Unmaps a view of a file-mapping object on the VAS of the current process.
+	//Unmaps a view of a file-mapping object on the address space of the current process.
 	//Internally it's a wrapper around UnmapViewOfFile().
 	//Parameters:
-	//  localAddress [in] The address of the view on the VAS of the current process.
+	//  localAddress [in] The address of the view on the address space of the current process.
 	static bool UnmapLocalViewOfFile(LPCVOID localAddress);
 
-	//Maps a view of a file-mapping object on the VAS of the attached process.
+	//Maps a view of a file-mapping object on the address space of the attached process.
 	//Internally, it's a wrapper around MapViewOfFileNuma2() if available, otherwise
 	//perform a workaround.
 	//Parameters:
@@ -436,11 +418,11 @@ public:
 	//                    AllocateSharedMemory() or CreateSharedMemory().
 	PVOID MapRemoteViewOfFile(const HANDLE hFileMapping) const;
 
-	//Unmaps a view of a file-mapping object on the VAS of the attached process.
+	//Unmaps a view of a file-mapping object on the address space of the attached process.
 	//Internally it's a wrapper around UnmapViewOfFile2() if available, otherwise
 	//perform a workaround.
 	//Parameters:
-	//  localAddress [in] The address of the view on the VAS of the attached process.
+	//  localAddress [in] The address of the view on the address space of the attached process.
 	bool UnmapRemoteViewOfFile(LPCVOID remoteAddress) const;
 
 	//Returns the PID of the specified process.
@@ -472,7 +454,7 @@ public:
 
 	//Returns the size of first parsed instruction on the buffer at 'address'.
 	//Parameters:
-	//  address [in] The address of the buffer on the current processe's VAD containing instruction.
+	//  address [in] The address of the buffer on the current process's address space containing instruction.
 	static size_t GetInstructionLength(const void* const address);
 	
 	//Loops through all modules of a process passing its information to a callback function.
