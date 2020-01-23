@@ -972,7 +972,7 @@ void MemEx::PatternScanImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>
 
 	while (!address.load() && start < end && VirtualQueryEx(m_hProcess, reinterpret_cast<LPCVOID>(start), &mbi, sizeof(MEMORY_BASIC_INFORMATION)))
 	{
-		if (!(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) && (mbi.Protect & protect))
+		if (mbi.Protect & protect)
 		{
 			for (; start < reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize; start += 4096)
 			{
