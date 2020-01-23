@@ -384,8 +384,7 @@ public:
 	//                            a pointer to a user buffer used to store the trampoline.
 	bool Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0, const HOOK_EX_ALLOCATION_METHOD allocationMethod = HOOK_EX_ALLOCATION_METHOD::SHARED_MEMORY, void* const data = nullptr);
 
-	//Array of bytes with known size at compile time
-	//Hooks an address.
+	//Hooks an address by passing a buffer with known size at compile time as the callback.
 	//Parameters:
 	//  address                [in]     The address to be hooked.
 	//  callback[callbackSize] [in]     The callback to be executed when the CPU executes 'address'.
@@ -413,7 +412,7 @@ public:
 	template <class _Ty, size_t callbackSize>
 	bool HookBuffer(const uintptr_t address, _Ty(&callback)[callbackSize], uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0, const HOOK_EX_ALLOCATION_METHOD allocationMethod = HOOK_EX_ALLOCATION_METHOD::SHARED_MEMORY, void* const data = nullptr) { return Hook(address, callback, callbackSize, trampoline, saveCpuStateMask, allocationMethod, data); };
 
-	//Hooks an address.
+	//Hooks an address by passing a buffer as the callback.
 	//Parameters:
 	//  address          [in]     The address to be hooked.
 	//  callback         [in]     The callback to be executed when the CPU executes 'address'.
