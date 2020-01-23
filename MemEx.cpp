@@ -359,10 +359,10 @@ bool MemEx::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 	while (memcmp(tmp, hookMark, sizeof(hookMark)) != 0)
 		tmp++;
 
-	return Hook(address, callback, static_cast<const size_t>(reinterpret_cast<ptrdiff_t>(tmp) - reinterpret_cast<ptrdiff_t>(callback)), trampoline, saveCpuStateMask);
+	return HookBuffer(address, callback, static_cast<const size_t>(reinterpret_cast<ptrdiff_t>(tmp) - reinterpret_cast<ptrdiff_t>(callback)), trampoline, saveCpuStateMask);
 }
 
-bool MemEx::Hook(const uintptr_t address, const void* const callback, const size_t callbackSize, uintptr_t* const trampoline, const DWORD saveCpuStateMask, const HOOK_EX_ALLOCATION_METHOD allocationMethod, void* const data)
+bool MemEx::HookBuffer(const uintptr_t address, const void* const callback, const size_t callbackSize, uintptr_t* const trampoline, const DWORD saveCpuStateMask, const HOOK_EX_ALLOCATION_METHOD allocationMethod, void* const data)
 {
 	uint8_t originalCode[HOOK_MAX_NUM_REPLACED_BYTES];
 	if (!m_hProcess || !Read(address, originalCode, sizeof(originalCode)))

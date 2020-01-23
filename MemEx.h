@@ -357,7 +357,7 @@ public:
 		return *static_cast<TyRet*>(CallImpl(cConv, std::is_same<TyRet, float>::value, std::is_same<TyRet, double>::value, sizeof(TyRet), address, args));
 	}
 	
-	//Hooks an address.
+	//Hooks an address. You must use the HOOK_MARK_END macro.
 	//Parameters:
 	//  address          [in]     The address to be hooked.
 	//  callback         [in]     The callback to be executed when the CPU executes 'address'.
@@ -385,10 +385,61 @@ public:
 	bool Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0, const HOOK_EX_ALLOCATION_METHOD allocationMethod = HOOK_EX_ALLOCATION_METHOD::SHARED_MEMORY, void* const data = nullptr);
 
 	//Array of bytes with known size at compile time
+	//Hooks an address.
+	//Parameters:
+	//  address                [in]     The address to be hooked.
+	//  callback[callbackSize] [in]     The callback to be executed when the CPU executes 'address'.
+	//  trampoline             [in]     An optional pointer to a variable that receives the address
+	//                                  of the trampoline. The trampoline contains the original replaced
+	//                                  instructions of the 'address' and a jump back to 'address'.
+	//  saveCpuStateMask       [in]     A mask containing a bitwise OR combination of one or more of
+	//                                  the following macros: GPR(general purpose registers),
+	//                                  FLAGS(eflags/rflags), XMMX(xmm0, xmm1, xmm2, xmm3, xmm4, xmm5).
+	//                                  Push the CPU above states to the stack before executing callback.
+	//                                  You should use this parameter if you perform a mid function hook.
+	//                                  By default no CPU state is saved.
+	//  allocationMethod       [in]     Specifies what method of memory allocation should be used to store
+	//                                  the trampoline. By default shared memory is used to store the trampoline.
+	//  data                   [in/out] The meaning of this parameter depends on the value of allocationMethod.
+	//                                  This parameter is ignored if allocationMethod is SHARED_MEMORY. If
+	//                                  allocationMethod is CODE_CAVE, this parameter can specify a vector of nullbytes
+	//                                  to be used in the FindCodeCave() function(it's recommended that you use the
+	//                                  NULL_BYTES() macro to specify the null bytes), otherwise if 'data' is NULL,
+	//                                  Hook() looks for a codecode where the null bytes are 0x00 and 0xCC.
+	//                                  If allocation method is USER_BUFFER and callback is NULL, data is
+	//                                  pointer to a variable of type size_t that receives the minimum size needed
+	//                                  to store the trampoline, otherwise if callback is not NULL, data specifies
+	//                                  a pointer to a user buffer used to store the trampoline.
 	template <class _Ty, size_t callbackSize>
-	bool Hook(const uintptr_t address, _Ty(&callback)[callbackSize], uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0, const HOOK_EX_ALLOCATION_METHOD allocationMethod = HOOK_EX_ALLOCATION_METHOD::SHARED_MEMORY, void* const data = nullptr) { return Hook(address, callback, callbackSize, trampoline, saveCpuStateMask, allocationMethod, data); };
+	bool HookBuffer(const uintptr_t address, _Ty(&callback)[callbackSize], uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0, const HOOK_EX_ALLOCATION_METHOD allocationMethod = HOOK_EX_ALLOCATION_METHOD::SHARED_MEMORY, void* const data = nullptr) { return Hook(address, callback, callbackSize, trampoline, saveCpuStateMask, allocationMethod, data); };
 
-	bool Hook(const uintptr_t address, const void* const callback, const size_t callbackSize, uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0, const HOOK_EX_ALLOCATION_METHOD allocationMethod = HOOK_EX_ALLOCATION_METHOD::SHARED_MEMORY, void* const data = nullptr);
+	//Hooks an address.
+	//Parameters:
+	//  address          [in]     The address to be hooked.
+	//  callback         [in]     The callback to be executed when the CPU executes 'address'.
+	//  callbackSize     [in]     The size of the callback in bytes.
+	//  trampoline       [in]     An optional pointer to a variable that receives the address
+	//                            of the trampoline. The trampoline contains the original replaced
+	//                            instructions of the 'address' and a jump back to 'address'.
+	//  saveCpuStateMask [in]     A mask containing a bitwise OR combination of one or more of
+	//                            the following macros: GPR(general purpose registers),
+	//                            FLAGS(eflags/rflags), XMMX(xmm0, xmm1, xmm2, xmm3, xmm4, xmm5).
+	//                            Push the CPU above states to the stack before executing callback.
+	//                            You should use this parameter if you perform a mid function hook.
+	//                            By default no CPU state is saved.
+	//  allocationMethod [in]     Specifies what method of memory allocation should be used to store
+	//                            the trampoline. By default shared memory is used to store the trampoline.
+	//  data             [in/out] The meaning of this parameter depends on the value of allocationMethod.
+	//                            This parameter is ignored if allocationMethod is SHARED_MEMORY. If
+	//                            allocationMethod is CODE_CAVE, this parameter can specify a vector of nullbytes
+	//                            to be used in the FindCodeCave() function(it's recommended that you use the
+	//                            NULL_BYTES() macro to specify the null bytes), otherwise if 'data' is NULL,
+	//                            Hook() looks for a codecode where the null bytes are 0x00 and 0xCC.
+	//                            If allocation method is USER_BUFFER and callback is NULL, data is
+	//                            pointer to a variable of type size_t that receives the minimum size needed
+	//                            to store the trampoline, otherwise if callback is not NULL, data specifies
+	//                            a pointer to a user buffer used to store the trampoline.
+	bool HookBuffer(const uintptr_t address, const void* const callback, const size_t callbackSize, uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0, const HOOK_EX_ALLOCATION_METHOD allocationMethod = HOOK_EX_ALLOCATION_METHOD::SHARED_MEMORY, void* const data = nullptr);
 
 	//Removes a previously placed hook at 'address'.
 	//Parameters:
