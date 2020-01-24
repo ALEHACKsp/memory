@@ -62,6 +62,7 @@ class MemIn
 		uint8_t saveCpuStateBufferSize = 0;
 		HOOK_IN_ALLOCATION_METHOD allocationMethod = HOOK_IN_ALLOCATION_METHOD::NEW_OPERATOR;
 		uint8_t codeCaveNullByte = 0;
+		uint8_t trampolineJumpSize = 0;
 	};
 
 	//Store addresses/bytes which the user nopped so they can be restored later with Patch()

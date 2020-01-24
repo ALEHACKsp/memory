@@ -11,11 +11,7 @@
 #define PLACE4(value) PLACE(uint32_t, value)
 #define PLACE8(value) PLACE(uint64_t, value)
 
-#ifdef UNICODE
-	#define lstrstr wcsstr
-#else
-	#define lstrstr strstr
-#endif
+#define RELATIVE_JUMP_32_SIZE 5
 
 #ifdef _WIN64
 	#define HOOK_JUMP_SIZE 12
@@ -25,6 +21,12 @@
 	#define HOOK_JUMP_SIZE 5
 	#define HOOK_MAX_NUM_REPLACED_BYTES 19
 	#define CALCULATE_SAVE_CPU_STATE_BUFFER_SIZE(mask) ((mask ? HOOK_JUMP_SIZE : 0) + (mask & FLAGS ? 2 : 0) + (mask & GPR ? 2 : 0) + (mask & XMMX ? 76 : 0))
+#endif
+
+#ifdef UNICODE
+#define lstrstr wcsstr
+#else
+#define lstrstr strstr
 #endif
 
 //LDE
@@ -302,8 +304,15 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 	if(!pr.Success())
 		return false;
 
+	const size_t jumpSize =
+#ifdef _WIN64
+	(!saveCpuStateMask && reinterpret_cast<ptrdiff_t>(callback) - static_cast<ptrdiff_t>(address + RELATIVE_JUMP_32_SIZE) < 0x80000000) ? RELATIVE_JUMP_32_SIZE : HOOK_JUMP_SIZE;
+#else
+		RELATIVE_JUMP_32_SIZE;
+#endif
+
 	size_t numReplacedBytes = 0;
-	while (numReplacedBytes < HOOK_JUMP_SIZE)
+	while (numReplacedBytes < jumpSize)
 		numReplacedBytes += GetInstructionLength(reinterpret_cast<const void* const>(address + numReplacedBytes));
 
 	const size_t saveCpuStateBufferSize = CALCULATE_SAVE_CPU_STATE_BUFFER_SIZE(saveCpuStateMask);
@@ -322,6 +331,14 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 			bufferAddress = FindCodeCaveBatch(bufferSize, *reinterpret_cast<const std::vector<uint8_t>*>(data), &codeCaveNullByte);
 		else
 			bufferAddress = FindCodeCaveBatch(bufferSize, { 0x00, 0xCC }, &codeCaveNullByte);
+		if (!bufferAddress)
+		{
+			if (data)
+				bufferAddress = FindCodeCaveBatch(bufferSize, *reinterpret_cast<const std::vector<uint8_t>*>(data), &codeCaveNullByte);
+			else
+				bufferAddress = FindCodeCaveBatch(bufferSize, { 0x00, 0xCC }, &codeCaveNullByte);
+		}
+		
 		break;
 	case HOOK_IN_ALLOCATION_METHOD::USER_BUFFER:
 		if (callback)
@@ -337,6 +354,15 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 	DWORD oldProtect;
 	if (!bufferAddress || !memset(reinterpret_cast<void*>(bufferAddress), 0, 1) || !VirtualProtect(reinterpret_cast<LPVOID>(bufferAddress), bufferSize, PAGE_EXECUTE_READWRITE, &oldProtect))
 		return false;
+
+#ifdef _WIN64
+	if (saveCpuStateMask && static_cast<ptrdiff_t>(bufferAddress) - static_cast<ptrdiff_t>(address + RELATIVE_JUMP_32_SIZE) < 0x80000000)
+	{
+		numReplacedBytes = 0;
+		while (numReplacedBytes < RELATIVE_JUMP_32_SIZE)
+			numReplacedBytes += GetInstructionLength(reinterpret_cast<const void* const>(address + numReplacedBytes));
+	}
+#endif
 
 	uint8_t* buffer = reinterpret_cast<uint8_t*>(bufferAddress);
 	if (saveCpuStateMask)
@@ -369,9 +395,12 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 
 		// call callback
 #ifdef _WIN64
-		PLACE2(0xB848); PLACE8(callback); PLACE2(0xD0FF);
-#else
-		PLACE1(0xE8); PLACE4(reinterpret_cast<ptrdiff_t>(callback) - reinterpret_cast<ptrdiff_t>(buffer + 4));
+		if (abs(reinterpret_cast<ptrdiff_t>(callback) - reinterpret_cast<ptrdiff_t>(buffer + RELATIVE_JUMP_32_SIZE)) < 0x80000000)
+#endif
+			{ PLACE1(0xE8); PLACE4(reinterpret_cast<ptrdiff_t>(callback) - reinterpret_cast<ptrdiff_t>(buffer + RELATIVE_JUMP_32_SIZE - 1)); }
+#ifdef _WIN64
+		else
+			{ PLACE2(0xB848); PLACE8(callback); PLACE2(0xD0FF); }
 #endif
 
 		if (saveCpuStateMask & FLAGS)
@@ -405,21 +434,34 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 	memcpy(reinterpret_cast<void*>(buffer), reinterpret_cast<const void*>(address), numReplacedBytes); buffer += numReplacedBytes;
 
 	//Jump back to original function
+	HookStruct hook;
 #ifdef _WIN64
-	PLACE2(0xB848); PLACE8(address + numReplacedBytes); PLACE2(0xE0FF);
-#else
-	PLACE1(0xE9); PLACE4(static_cast<ptrdiff_t>(address + numReplacedBytes) - reinterpret_cast<ptrdiff_t>(buffer + 4));
+	if (abs(static_cast<ptrdiff_t>(address + numReplacedBytes) - reinterpret_cast<ptrdiff_t>(buffer + RELATIVE_JUMP_32_SIZE)) < 0x80000000)
+#endif
+	{
+		PLACE1(0xE9); PLACE4(static_cast<ptrdiff_t>(address + numReplacedBytes) - reinterpret_cast<ptrdiff_t>(buffer + RELATIVE_JUMP_32_SIZE - 1));
+		hook.trampolineJumpSize = RELATIVE_JUMP_32_SIZE;
+	}
+#ifdef _WIN64
+	else
+	{
+		PLACE2(0xB848); PLACE8(address + numReplacedBytes); PLACE2(0xE0FF);
+		hook.trampolineJumpSize = HOOK_JUMP_SIZE;
+	}
 #endif
 
 	//Jump from hooked function to callback
 	buffer = reinterpret_cast<uint8_t*>(address);
+	uintptr_t detourAddress = saveCpuStateMask ? bufferAddress : reinterpret_cast<uintptr_t>(callback);
 #ifdef _WIN64
-	PLACE2(0xB848); PLACE8((saveCpuStateMask) ? bufferAddress : reinterpret_cast<uintptr_t>(callback)); PLACE2(0xE0FF);
-#else
-	PLACE1(0xE9); PLACE4(static_cast<ptrdiff_t>((saveCpuStateMask) ? bufferAddress : reinterpret_cast<uintptr_t>(callback)) - reinterpret_cast<ptrdiff_t>(buffer + 4));
+	if (abs(static_cast<ptrdiff_t>(detourAddress) - reinterpret_cast<ptrdiff_t>(buffer + RELATIVE_JUMP_32_SIZE)) < 0x80000000)
 #endif
-
-	HookStruct hook;
+		{ PLACE1(0xE9); PLACE4(static_cast<ptrdiff_t>(detourAddress) - reinterpret_cast<ptrdiff_t>(buffer + RELATIVE_JUMP_32_SIZE - 1)); }
+#ifdef _WIN64
+	else
+		{ PLACE2(0xB848); PLACE8(detourAddress); PLACE2(0xE0FF); }
+#endif
+	
 	hook.buffer = bufferAddress;
 	hook.saveCpuStateBufferSize = static_cast<uint8_t>(saveCpuStateBufferSize);
 	hook.trampolineSize = static_cast<uint8_t>(trampolineSize);
@@ -436,12 +478,12 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 
 bool MemIn::Unhook(const uintptr_t address)
 {
-	ProtectRegion pr(address, static_cast<SIZE_T>(m_Hooks[address].trampolineSize - HOOK_JUMP_SIZE));
+	ProtectRegion pr(address, static_cast<SIZE_T>(m_Hooks[address].trampolineSize - m_Hooks[address].trampolineJumpSize));
 	if (!pr.Success() || !m_Hooks[address].buffer)
 		return false;
 
 	//Restore original instruction(s)
-	memcpy(reinterpret_cast<void*>(address), reinterpret_cast<const void*>(m_Hooks[address].buffer + m_Hooks[address].saveCpuStateBufferSize), m_Hooks[address].trampolineSize - HOOK_JUMP_SIZE);
+	memcpy(reinterpret_cast<void*>(address), reinterpret_cast<const void*>(m_Hooks[address].buffer + m_Hooks[address].saveCpuStateBufferSize), m_Hooks[address].trampolineSize - m_Hooks[address].trampolineJumpSize);
 
 	//Free memory used to store the buffer(i.e. saveCpuStateBuffer and trampoline)
 	if (m_Hooks[address].allocationMethod == HOOK_IN_ALLOCATION_METHOD::NEW_OPERATOR)
@@ -451,7 +493,7 @@ bool MemIn::Unhook(const uintptr_t address)
 
 	m_Hooks.erase(address);
 
-	return static_cast<bool>(FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<LPCVOID>(address), static_cast<SIZE_T>(m_Hooks[address].trampolineSize - HOOK_JUMP_SIZE)));
+	return static_cast<bool>(FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<LPCVOID>(address), static_cast<SIZE_T>(m_Hooks[address].trampolineSize - m_Hooks[address].trampolineJumpSize)));
 }
 
 uintptr_t MemIn::FindCodeCave(const size_t size, const uint8_t nullByte, uintptr_t start, const uintptr_t end, const DWORD protection)
