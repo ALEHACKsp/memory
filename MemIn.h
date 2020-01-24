@@ -15,7 +15,7 @@
 #include <TlHelp32.h>
 
 //CPU STATES(for use in the saveCpuStateMask parameter on the Hook() function)
-//Even though the upper portions of YMM0-15 and ZMM0-15 are volatitle, there's no mechanism to save them. 
+//Even though the upper portions of YMM0-15 and ZMM0-15 are volatile, there's no mechanism to save them. 
 #define GPR 0x01
 #define FLAGS 0x02
 #define XMMX 0x04
@@ -102,7 +102,7 @@ public:
 	//  size    [in] The number of bytes to be copied.
 	static bool Write(const uintptr_t address, const void* const buffer, const SIZE_T size);
 
-	//Patches 'address' with 'size' bytes stored on 'bytes'.
+	//Patches 'address' with 'size' bytes stored on 'buffer'.
 	//Parameters:
 	//  address [in] The address where the bytes will be copied to.
 	//  buffer  [in] The buffer where the bytes will be copied from.

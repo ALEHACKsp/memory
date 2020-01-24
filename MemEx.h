@@ -206,7 +206,7 @@ public:
 	//  size    [in] The number of bytes to be copied.
 	bool Write(uintptr_t address, const void* const buffer, const SIZE_T size) const;
 
-	//Patches 'address' with 'size' bytes stored on 'bytes'.
+	//Patches 'address' with 'size' bytes stored on 'buffer'.
 	//Parameters:
 	//  address [in] The address where the bytes will be copied to.
 	//  buffer  [in] The buffer where the bytes will be copied from.
