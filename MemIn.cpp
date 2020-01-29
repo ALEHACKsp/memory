@@ -301,14 +301,19 @@ you should not use the trampoline to try execute the rest of the original functi
 bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline, const DWORD saveCpuStateMask, const HOOK_IN_ALLOCATION_METHOD allocationMethod, void* const data)
 {
 	ProtectRegion pr(address, HOOK_MAX_NUM_REPLACED_BYTES);
-	if(!pr.Success())
+	if (!pr.Success())
 		return false;
 
-	const size_t jumpSize =
+	size_t jumpSize;
 #ifdef _WIN64
-	(!saveCpuStateMask && reinterpret_cast<ptrdiff_t>(callback) - static_cast<ptrdiff_t>(address + RELATIVE_JUMP_32_SIZE) < 0x80000000) ? RELATIVE_JUMP_32_SIZE : HOOK_JUMP_SIZE;
+	if (saveCpuStateMask)
+		jumpSize = HOOK_JUMP_SIZE + 2;
+	else if (reinterpret_cast<ptrdiff_t>(callback) - static_cast<ptrdiff_t>(address + RELATIVE_JUMP_32_SIZE) < 0x80000000)
+		jumpSize = RELATIVE_JUMP_32_SIZE + 1;
+	else
+		jumpSize = HOOK_JUMP_SIZE + 1;
 #else
-		RELATIVE_JUMP_32_SIZE;
+	jumpSize = RELATIVE_JUMP_32_SIZE;
 #endif
 
 	size_t numReplacedBytes = 0;
@@ -316,7 +321,13 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 		numReplacedBytes += GetInstructionLength(reinterpret_cast<const void* const>(address + numReplacedBytes));
 
 	const size_t saveCpuStateBufferSize = CALCULATE_SAVE_CPU_STATE_BUFFER_SIZE(saveCpuStateMask);
-	const size_t trampolineSize = numReplacedBytes + HOOK_JUMP_SIZE;
+#ifdef _WIN64
+	jumpSize -= 1;
+
+	const size_t trampolineSize = numReplacedBytes + HOOK_JUMP_SIZE + 1;
+#else
+	const size_t trampolineSize = numReplacedBytes + RELATIVE_JUMP_32_SIZE;
+#endif
 	const size_t bufferSize = saveCpuStateBufferSize + trampolineSize;
 
 	//Allocate buffer to store the saveCpuStateBuffer and the trampoline.
@@ -338,7 +349,7 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 			else
 				bufferAddress = FindCodeCaveBatch(bufferSize, { 0x00, 0xCC }, &codeCaveNullByte);
 		}
-		
+
 		break;
 	case HOOK_IN_ALLOCATION_METHOD::USER_BUFFER:
 		if (callback)
@@ -367,6 +378,14 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 	uint8_t* buffer = reinterpret_cast<uint8_t*>(bufferAddress);
 	if (saveCpuStateMask)
 	{
+#ifdef _WIN64
+
+		if (saveCpuStateMask && abs(static_cast<ptrdiff_t>(bufferAddress) - static_cast<ptrdiff_t>(address + RELATIVE_JUMP_32_SIZE + 1)) < 0x80000000)
+		{
+			PLACE1(0x58);
+		}
+#endif
+
 		if (saveCpuStateMask & GPR)
 		{
 #ifdef _WIN64
@@ -389,22 +408,30 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 			PLACE1(0xF3); PLACE4(0x24547F0F); PLACE1(0x20); // movdqu xmmword ptr ss:[r/esp+0x20], xmm2
 			PLACE1(0xF3); PLACE4(0x244C7F0F); PLACE1(0x10); // movdqu xmmword ptr ss:[r/esp+0x10], xmm1
 			PLACE1(0xF3); PLACE4(0x24047F0F); // movdqu xmmword ptr ss:[r/esp], xmm0
-		}
+	}
 		if (saveCpuStateMask & FLAGS)
-			{ PLACE1(0x9C); } // pushfd/q
+		{
+			PLACE1(0x9C);
+		} // pushfd/q
 
-		// call callback
+// call callback
 #ifdef _WIN64
 		if (abs(reinterpret_cast<ptrdiff_t>(callback) - reinterpret_cast<ptrdiff_t>(buffer + RELATIVE_JUMP_32_SIZE)) < 0x80000000)
 #endif
-			{ PLACE1(0xE8); PLACE4(reinterpret_cast<ptrdiff_t>(callback) - reinterpret_cast<ptrdiff_t>(buffer + RELATIVE_JUMP_32_SIZE - 1)); }
+		{
+			PLACE1(0xE8); PLACE4(reinterpret_cast<ptrdiff_t>(callback) - reinterpret_cast<ptrdiff_t>(buffer + RELATIVE_JUMP_32_SIZE - 1));
+		}
 #ifdef _WIN64
 		else
-			{ PLACE2(0xB848); PLACE8(callback); PLACE2(0xD0FF); }
+		{
+			PLACE2(0xBE49); PLACE8(callback); PLACE1(0x41); PLACE2(0xD6FF);
+		} //mov r14, callback & call r14
 #endif
 
 		if (saveCpuStateMask & FLAGS)
-			{ PLACE1(0x9D); } // popfd/q
+		{
+			PLACE1(0x9D);
+		} // popfd/q
 		if (saveCpuStateMask & XMMX)
 		{
 			PLACE1(0xF3); PLACE4(0x24046F0F); // movdqu xmm0, xmmword ptr ss:[r/esp]
@@ -445,7 +472,7 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 #ifdef _WIN64
 	else
 	{
-		PLACE2(0xB848); PLACE8(address + numReplacedBytes); PLACE2(0xE0FF);
+		PLACE1(0x50); PLACE2(0xB848); PLACE8(address + jumpSize); PLACE2(0xE0FF);
 		hook.trampolineJumpSize = HOOK_JUMP_SIZE;
 	}
 #endif
@@ -454,19 +481,26 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 	buffer = reinterpret_cast<uint8_t*>(address);
 	uintptr_t detourAddress = saveCpuStateMask ? bufferAddress : reinterpret_cast<uintptr_t>(callback);
 #ifdef _WIN64
-	if (abs(static_cast<ptrdiff_t>(detourAddress) - reinterpret_cast<ptrdiff_t>(buffer + RELATIVE_JUMP_32_SIZE)) < 0x80000000)
-#endif
-		{ PLACE1(0xE9); PLACE4(static_cast<ptrdiff_t>(detourAddress) - reinterpret_cast<ptrdiff_t>(buffer + RELATIVE_JUMP_32_SIZE - 1)); }
-#ifdef _WIN64
+	if (abs(static_cast<ptrdiff_t>(detourAddress) - reinterpret_cast<ptrdiff_t>(buffer + RELATIVE_JUMP_32_SIZE + 1)) < 0x80000000)
+	{
+		PLACE1(0xE9); PLACE4(static_cast<ptrdiff_t>(detourAddress) - reinterpret_cast<ptrdiff_t>(buffer + RELATIVE_JUMP_32_SIZE - 1));
+		PLACE1(0x58);
+		memset(buffer, 0x90, numReplacedBytes - (reinterpret_cast<uintptr_t>(buffer) - address));
+	}
 	else
-		{ PLACE2(0xB848); PLACE8(detourAddress); PLACE2(0xE0FF); }
+	{
+		if (saveCpuStateMask) { PLACE1(0x50); } PLACE2(0xB848); PLACE8(detourAddress); PLACE2(0xE0FF); if (saveCpuStateMask) { PLACE1(0x58); }
+	}
+#else
+	{ PLACE1(0xE9); PLACE4(static_cast<ptrdiff_t>(detourAddress) - reinterpret_cast<ptrdiff_t>(buffer + RELATIVE_JUMP_32_SIZE - 1)); }
 #endif
-	
+
 	hook.buffer = bufferAddress;
 	hook.saveCpuStateBufferSize = static_cast<uint8_t>(saveCpuStateBufferSize);
 	hook.trampolineSize = static_cast<uint8_t>(trampolineSize);
 	hook.allocationMethod = allocationMethod;
 	hook.codeCaveNullByte = codeCaveNullByte;
+	hook.numReplacedBytes = static_cast<uint8_t>(numReplacedBytes);
 
 	m_Hooks[address] = hook;
 
@@ -474,7 +508,7 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 		*trampoline = bufferAddress + saveCpuStateBufferSize;
 
 	return static_cast<bool>(FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<LPCVOID>(address), static_cast<SIZE_T>(numReplacedBytes)));
-}
+	}
 
 bool MemIn::Unhook(const uintptr_t address)
 {
@@ -483,7 +517,7 @@ bool MemIn::Unhook(const uintptr_t address)
 		return false;
 
 	//Restore original instruction(s)
-	memcpy(reinterpret_cast<void*>(address), reinterpret_cast<const void*>(m_Hooks[address].buffer + m_Hooks[address].saveCpuStateBufferSize), m_Hooks[address].trampolineSize - m_Hooks[address].trampolineJumpSize);
+	memcpy(reinterpret_cast<void*>(address), reinterpret_cast<const void*>(m_Hooks[address].buffer + m_Hooks[address].saveCpuStateBufferSize), m_Hooks[address].numReplacedBytes);
 
 	//Free memory used to store the buffer(i.e. saveCpuStateBuffer and trampoline)
 	if (m_Hooks[address].allocationMethod == HOOK_IN_ALLOCATION_METHOD::NEW_OPERATOR)
