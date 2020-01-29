@@ -963,6 +963,16 @@ HANDLE MemEx::AllocateSharedMemory(const size_t size, PVOID& localView, PVOID& r
 
 bool MemEx::FreeSharedMemory(HANDLE hFileMapping, LPCVOID localView, LPCVOID remoteView) const { return UnmapLocalViewOfFile(localView) && UnmapRemoteViewOfFile(remoteView) && static_cast<bool>(CloseHandle(hFileMapping)); }
 
+bool MemEx::Inject(const TCHAR* const dllPath)
+{
+	LPVOID lpAddress = NULL; HANDLE hThread = NULL;
+	return (lpAddress = VirtualAllocEx(m_hProcess, NULL, 0x1000, MEM_COMMIT, PAGE_EXECUTE_READWRITE)) &&
+		WriteProcessMemory(m_hProcess, lpAddress, dllPath, (lstrlen(dllPath) + 1) * sizeof(TCHAR), nullptr) &&
+		(hThread = CreateRemoteThreadEx(m_hProcess, NULL, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(LoadLibrary), lpAddress, NULL, NULL, NULL)) &&
+		WaitForSingleObject(hThread, INFINITE) &&
+		VirtualFreeEx(m_hProcess, lpAddress, 0x1000, MEM_FREE);
+}
+
 //Inspired by https://github.com/cheat-engine/cheat-engine/blob/ac072b6fae1e0541d9e54e2b86452507dde4689a/Cheat%20Engine/ceserver/native-api.c
 void MemEx::PatternScanImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>& finishCount, const uint8_t* const pattern, const char* const mask, uintptr_t start, const uintptr_t end, const DWORD protect) const
 {

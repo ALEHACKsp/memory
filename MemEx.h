@@ -568,6 +568,8 @@ public:
 	//  size [in] The size of the file-mapping object.
 	static HANDLE CreateSharedMemory(const size_t size);
 
+	bool Inject(const TCHAR* const dllPath);
+
 private:
 	void PatternScanImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>& finishCount, const uint8_t* const pattern, const char* const mask, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1) const;
 	
