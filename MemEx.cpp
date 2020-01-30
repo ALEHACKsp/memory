@@ -841,9 +841,9 @@ size_t MemEx::GetInstructionLength(const uintptr_t address)
 
 	//Parse legacy prefixes & REX prefixes
 #if UINTPTR_MAX == UINT64_MAX
-	for (; findByte(prefixes, sizeof(prefixes), *b) || (R == 4); b++)
+	for (int i = 0; i < 14 && findByte(prefixes, sizeof(prefixes), *b) || (R == 4); i++, b++)
 #else
-	for (; findByte(prefixes, sizeof(prefixes), *b); b++)
+	for (int i = 0; i < 14 && findByte(prefixes, sizeof(prefixes), *b); i++, b++)
 #endif
 	{
 		if (*b == 0x66)
