@@ -203,7 +203,7 @@ uintptr_t MemIn::PatternScan(const char* const pattern, const char* const mask, 
 {
 	std::atomic<uintptr_t> address = 0; std::atomic<size_t> finishCount = 0;
 
-#if PATTERN_SCAN_IN_MULTITHREADING
+#if SCAN_IN_MULTITHREADING
 	auto numThreads = std::thread::hardware_concurrency();
 	if (!numThreads)
 		numThreads = 1;
@@ -530,14 +530,40 @@ bool MemIn::Unhook(const uintptr_t address)
 	return static_cast<bool>(FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<LPCVOID>(address), static_cast<SIZE_T>(m_Hooks[address].trampolineSize - m_Hooks[address].trampolineJumpSize)));
 }
 
-uintptr_t MemIn::FindCodeCave(const size_t size, const uint8_t nullByte, uintptr_t start, const uintptr_t end, const DWORD protection)
+uintptr_t MemIn::FindCodeCave(const size_t size, const uint32_t nullByte, uintptr_t start, const uintptr_t end, const DWORD protection)
 {
-	auto pattern = std::make_unique<char[]>(size), mask = std::make_unique<char[]>(size + 1);
-	memset(pattern.get(), static_cast<int>(nullByte), size);
-	memset(mask.get(), static_cast<int>('x'), size);
-	mask.get()[size] = '\0';
+	if (nullByte != -1)
+	{
+		auto pattern = std::make_unique<char[]>(size), mask = std::make_unique<char[]>(size + 1);
+		memset(pattern.get(), static_cast<int>(nullByte), size);
+		memset(mask.get(), static_cast<int>('x'), size);
+		mask.get()[size] = '\0';
 
-	return PatternScan(pattern.get(), mask.get(), start, end, protection);
+		return PatternScan(pattern.get(), mask.get(), start, end, protection);
+	}
+	else
+	{
+		std::atomic<uintptr_t> address = 0; std::atomic<size_t> finishCount = 0;
+
+#if SCAN_IN_MULTITHREADING
+		auto numThreads = std::thread::hardware_concurrency();
+		if (!numThreads)
+			numThreads = 1;
+
+		size_t chunkSize = (end - start) / numThreads;
+
+		for (unsigned int i = 0; i < numThreads; i++)
+			std::thread(&MemIn::FindCodeCaveImpl, std::ref(address), std::ref(finishCount), size, start + chunkSize * i, start + chunkSize * (static_cast<size_t>(i) + 1), protection).detach();
+
+		while (finishCount.load() != numThreads)
+			Sleep(1);
+
+#else
+		FindCodeCaveImpl(address, finishCount, size, start, end, protection);
+#endif	
+
+		return address.load();
+	}
 }
 
 uintptr_t MemIn::FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte, uintptr_t start, const uintptr_t end, const DWORD protection)
@@ -545,6 +571,69 @@ uintptr_t MemIn::FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>
 	for (auto nullByte : nullBytes)
 	{
 		auto address = FindCodeCave(size, nullByte, start, end, protection);
+		if (address)
+		{
+			if (pNullByte)
+				*pNullByte = nullByte;
+
+			return address;
+		}
+	}
+
+	return 0;
+}
+
+uintptr_t MemIn::FindCodeCaveModule(const size_t size, const uint32_t nullByte, const TCHAR* const moduleName, const DWORD protection)
+{
+	uintptr_t moduleBase; DWORD moduleSize;
+	if (!(moduleBase = GetModuleBase(moduleName, &moduleSize)))
+		return 0;
+
+	return FindCodeCave(size, nullByte, moduleBase, moduleBase + moduleSize, protection);
+}
+
+uintptr_t MemIn::FindCodeCaveModuleBatch(const size_t size, const std::vector<uint8_t>& nullBytes, const TCHAR* const moduleName, uint8_t* const pNullByte, const DWORD protection)
+{
+	for (auto nullByte : nullBytes)
+	{
+		auto address = FindCodeCaveModule(size, nullByte, moduleName, protection);
+		if (address)
+		{
+			if (pNullByte)
+				*pNullByte = nullByte;
+
+			return address;
+		}
+	}
+
+	return 0;
+}
+
+uintptr_t MemIn::FindCodeCaveAllModules(const size_t size, const uint32_t nullByte, const DWORD protection)
+{
+	struct CodeCaveInfo
+	{
+		size_t size;
+		uint32_t nullByte;
+		DWORD protection;
+		uintptr_t address;
+	};
+
+	CodeCaveInfo cci = { size, nullByte, protection };
+
+	EnumModules(GetCurrentProcessId(), [](MODULEENTRY32& me, void* param) {
+		CodeCaveInfo* pcci = reinterpret_cast<CodeCaveInfo*>(param);
+		return (pcci->address = FindCodeCave(pcci->size, pcci->nullByte, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr) + me.modBaseSize, pcci->protection)) == NULL;
+		}, &cci);
+
+	return cci.address;
+}
+
+uintptr_t MemIn::FindCodeCaveAllModulesBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte, const DWORD protection)
+{
+	for (auto nullByte : nullBytes)
+	{
+		auto address = FindCodeCaveAllModules(size, nullByte, protection);
 		if (address)
 		{
 			if (pNullByte)
@@ -743,6 +832,41 @@ void MemIn::PatternScanImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>
 				byte_not_match:
 					bytes++;
 				}
+			}
+		}
+
+		start = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+	}
+
+	finishCount++;
+}
+
+void MemIn::FindCodeCaveImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>& finishCount, const size_t size, uintptr_t start, const uintptr_t end, const DWORD protect)
+{
+	MEMORY_BASIC_INFORMATION mbi;
+	size_t count = 0;
+
+	while (!address.load() && start < end && VirtualQuery(reinterpret_cast<LPCVOID>(start), &mbi, sizeof(MEMORY_BASIC_INFORMATION)))
+	{
+		if (!(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) && (mbi.Protect & protect))
+		{
+			uint8_t lastByte = *reinterpret_cast<uint8_t*>(start);
+
+			while(start < reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize)
+			{
+				if (*reinterpret_cast<uint8_t*>(start) == lastByte)
+				{
+					if (++count == size)
+					{
+						address = start - count + 1; //Found match
+						finishCount++; //Increase finish count
+						return;
+					}
+				}
+				else
+					count = 0;
+
+				start++;
 			}
 		}
 

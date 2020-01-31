@@ -4,7 +4,7 @@
 #ifndef MEMIN_H
 #define MEMIN_H
 
-#define PATTERN_SCAN_IN_MULTITHREADING 1
+#define SCAN_IN_MULTITHREADING 1
 
 #include <Windows.h>
 #include <memory>
@@ -274,22 +274,27 @@ public:
 	//  address [in] The address to be unhooked.
 	static bool Unhook(const uintptr_t address);
 
-	//Scans a range of memory to find a code cave.
+	//Scans a range of memory for a code cave.
 	//Parameters:
 	//  size       [in] The size of the code cave.
-	//  nullByte   [in] The byte of the code cave.
+	//  nullByte   [in] The byte of the code cave. If -1 is specified,
+	//                  the null byte is any byte, that is, FindCodeCave()
+	//                  will return any sequence of the same byte.
 	//  start      [in] The start address of the region to be scanned.
 	//  end        [in] The end address of the region to be scanned.
 	//  protection [in] Specifies a mask of memory protection constants
 	//                  which defines what memory regions will be scanned.
 	//                  The default value(-1) specifies that pages with any
 	//                  protection between 'start' and 'end' should be scanned.
-	static uintptr_t FindCodeCave(const size_t size, const uint8_t nullByte = static_cast<uint8_t>(0x00), uintptr_t start = 0, const uintptr_t end = -1, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY);
+	static uintptr_t FindCodeCave(const size_t size, const uint32_t nullByte = 0x00, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY);
 
-	//Scans a range of memory to find a code cave.
+	//Scans a range of memory for a code cave.
 	//Parameters:
 	//  size       [in] The size of the code cave.
 	//  nullBytes  [in] The byte of the code cave.
+	//  pNullByte  [in] If a codecave is found and pNullByte is not NULL,
+	//                  the byte that the codecave contains is written to
+	//                  the variable pointed by pNullByte.
 	//  start      [in] The start address of the region to be scanned.
 	//  end        [in] The end address of the region to be scanned.
 	//  protection [in] Specifies a mask of memory protection constants
@@ -298,6 +303,58 @@ public:
 	//                  protection between 'start' and 'end' should be scanned.
 	static uintptr_t FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes = { 0x00 }, uint8_t* const pNullByte = nullptr, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY);
 
+	//Scans a module for a code cave.
+	//Parameters:
+	//  size       [in] The size of the code cave.
+	//  nullByte   [in] The byte of the code cave. If -1 is specified,
+	//                  the null byte is any byte, that is, FindCodeCave()
+	//                  will return any sequence of the same byte.
+	//  moduleName [in] The name of the module to be scanned.
+	//  protection [in] Specifies a mask of memory protection constants
+	//                  which defines what memory regions will be scanned.
+	//                  The default value(-1) specifies that pages with any
+	//                  protection between 'start' and 'end' should be scanned.
+	static uintptr_t FindCodeCaveModule(const size_t size, const uint32_t nullByte = 0x00, const TCHAR* const moduleName = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY);
+
+	//Scans a module for a code cave.
+	//Parameters:
+	//  size       [in] The size of the code cave.
+	//  nullBytes  [in] The byte of the code cave.
+	//  moduleName [in] The name of the module to be scanned.
+	//  pNullByte  [in] If a codecave is found and pNullByte is not NULL,
+	//                  the byte that the codecave contains is written to
+	//                  the variable pointed by pNullByte.
+	//  protection [in] Specifies a mask of memory protection constants
+	//                  which defines what memory regions will be scanned.
+	//                  The default value(-1) specifies that pages with any
+	//                  protection between 'start' and 'end' should be scanned.
+	static uintptr_t FindCodeCaveModuleBatch(const size_t size, const std::vector<uint8_t>& nullBytes = { 0x00 }, const TCHAR* const moduleName = nullptr, uint8_t* const pNullByte = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY);
+
+	//Scans all modules for a code cave.
+	//Parameters:
+	//  size       [in] The size of the code cave.
+	//  nullByte   [in] The byte of the code cave. If -1 is specified,
+	//                  the null byte is any byte, that is, FindCodeCave()
+	//                  will return any sequence of the same byte.
+	//  protection [in] Specifies a mask of memory protection constants
+	//                  which defines what memory regions will be scanned.
+	//                  The default value(-1) specifies that pages with any
+	//                  protection between 'start' and 'end' should be scanned.
+	static uintptr_t FindCodeCaveAllModules(const size_t size, const uint32_t nullByte = 0x00, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY);
+
+	//Scans all modules for a code cave.
+	//Parameters:
+	//  size       [in] The size of the code cave.
+	//  nullBytes  [in] The byte of the code cave.
+	//  pNullByte  [in] If a codecave is found and pNullByte is not NULL,
+	//                  the byte that the codecave contains is written to
+	//                  the variable pointed by pNullByte.
+	//  protection [in] Specifies a mask of memory protection constants
+	//                  which defines what memory regions will be scanned.
+	//                  The default value(-1) specifies that pages with any
+	//                  protection between 'start' and 'end' should be scanned.
+	static uintptr_t FindCodeCaveAllModulesBatch(const size_t size, const std::vector<uint8_t>& nullBytes = { 0x00 }, uint8_t* const pNullByte = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY);
+	
 	//Returns the PID of the specified process.
 	//Parameters:
 	//  processName [in] The name of the process.
@@ -338,6 +395,9 @@ public:
 	static void AOBToPattern(const char* const AOB, std::string& pattern, std::string& mask);
 private:
 	static void PatternScanImpl(std::atomic<uintptr_t>& returnValue, std::atomic<size_t>& finishCount, const uint8_t* const pattern, const char* const mask, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1);
+
+	static void FindCodeCaveImpl(std::atomic<uintptr_t>& returnValue, std::atomic<size_t>& finishCount, const size_t size, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1);
+
 };
 
 #endif // MEMIN_H
