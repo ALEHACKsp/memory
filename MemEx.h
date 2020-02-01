@@ -472,7 +472,7 @@ public:
 	//                  which defines what memory regions will be scanned.
 	//                  The default value(-1) specifies that pages with any
 	//                  protection between 'start' and 'end' should be scanned.
-	uintptr_t FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes = { 0x00 }, uint8_t* const pNullByte = nullptr, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
+	uintptr_t FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte = nullptr, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
 
 	//Scans a module for a code cave.
 	//Parameters:
@@ -499,7 +499,7 @@ public:
 	//                  which defines what memory regions will be scanned.
 	//                  The default value(-1) specifies that pages with any
 	//                  protection between 'start' and 'end' should be scanned.
-	uintptr_t FindCodeCaveModuleBatch(const size_t size, const std::vector<uint8_t>& nullBytes = { 0x00 }, const TCHAR* const moduleName = nullptr, uint8_t* const pNullByte = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
+	uintptr_t FindCodeCaveModuleBatch(const size_t size, const std::vector<uint8_t>& nullBytes, const TCHAR* const moduleName = nullptr, uint8_t* const pNullByte = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
 
 	//Scans all modules for a code cave.
 	//Parameters:
@@ -524,7 +524,7 @@ public:
 	//                  which defines what memory regions will be scanned.
 	//                  The default value(-1) specifies that pages with any
 	//                  protection between 'start' and 'end' should be scanned.
-	uintptr_t FindCodeCaveAllModulesBatch(const size_t size, const std::vector<uint8_t>& nullBytes = { 0x00 }, uint8_t* const pNullByte = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
+	uintptr_t FindCodeCaveAllModulesBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
 
 	//Creates and returns a handle to an unnamed file-mapping object backed by the system's 
 	//paging system. It basically represents a page which can be shared with other processes.

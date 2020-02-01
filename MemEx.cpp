@@ -1057,7 +1057,7 @@ bool MemEx::Inject(const TCHAR* const dllPath)
 {
 	LPVOID lpAddress = NULL; HANDLE hThread = NULL;
 	return (lpAddress = VirtualAllocEx(m_hProcess, NULL, 0x1000, MEM_COMMIT, PAGE_EXECUTE_READWRITE)) &&
-		WriteProcessMemory(m_hProcess, lpAddress, dllPath, (lstrlen(dllPath) + 1) * sizeof(TCHAR), nullptr) &&
+		WriteProcessMemory(m_hProcess, lpAddress, dllPath, (static_cast<size_t>(lstrlen(dllPath)) + 1) * sizeof(TCHAR), nullptr) &&
 		(hThread = CreateRemoteThreadEx(m_hProcess, NULL, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(LoadLibrary), lpAddress, NULL, NULL, NULL)) &&
 		WaitForSingleObject(hThread, INFINITE) &&
 		VirtualFreeEx(m_hProcess, lpAddress, 0x1000, MEM_FREE);
