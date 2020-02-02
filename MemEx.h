@@ -60,18 +60,6 @@ enum class CConv
 #define FLAGS 0x02
 #define XMMX 0x04
 
-enum class HOOK_EX_ALLOCATION_METHOD
-{
-	SHARED_MEMORY,
-	CODE_CAVE,
-	USER_BUFFER
-};
-
-//This is a macro that helps to specify a list of null bytes on the data parameter of the Hook() function
-//Usage:
-//  NULL_BYTES( ( { 0x10, 0x20, 0x30 } ) )
-#define NULL_BYTES(list) &std::vector<uint8_t>list
-
 class MemEx
 {
 	struct Nop
@@ -82,11 +70,10 @@ class MemEx
 
 	struct HookStruct
 	{
-		uintptr_t address = 0; //place where the hook is placed
-		uint16_t callbackSize = 0;
-		uint8_t trampolineSize = 0;
-		uint8_t saveCpuStateBufferSize = 0;
-		HOOK_EX_ALLOCATION_METHOD allocationMethod = HOOK_EX_ALLOCATION_METHOD::SHARED_MEMORY;
+		uintptr_t buffer = 0;
+		uint8_t bufferSize = 0;
+		uint8_t numReplacedBytes = 0;
+		bool useCodeCaveAsMemory = true;
 		uint8_t codeCaveNullByte = 0;
 	};
 
@@ -112,6 +99,7 @@ class MemEx
 	//Key(uintptr_t) stores the address of the hooked function
 	std::map<uintptr_t, HookStruct> m_Hooks;
 
+	std::unordered_map<uintptr_t, size_t> m_Pages;
 public:
 	const static DWORD dwPageSize;
 
@@ -382,7 +370,7 @@ public:
 	//                            pointer to a variable of type size_t that receives the minimum size needed
 	//                            to store the trampoline, otherwise if callback is not NULL, data specifies
 	//                            a pointer to a user buffer used to store the trampoline.
-	bool Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0, const HOOK_EX_ALLOCATION_METHOD allocationMethod = HOOK_EX_ALLOCATION_METHOD::SHARED_MEMORY, void* const data = nullptr);
+	bool Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0);
 
 	//Hooks an address by passing a buffer with known size at compile time as the callback.
 	//Parameters:
@@ -410,7 +398,7 @@ public:
 	//                                  to store the trampoline, otherwise if callback is not NULL, data specifies
 	//                                  a pointer to a user buffer used to store the trampoline.
 	template <class _Ty, size_t callbackSize>
-	bool HookBuffer(const uintptr_t address, _Ty(&callback)[callbackSize], uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0, const HOOK_EX_ALLOCATION_METHOD allocationMethod = HOOK_EX_ALLOCATION_METHOD::SHARED_MEMORY, void* const data = nullptr) { return Hook(address, callback, callbackSize, trampoline, saveCpuStateMask, allocationMethod, data); };
+	bool HookBuffer(const uintptr_t address, _Ty(&callback)[callbackSize], uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0) { return Hook(address, callback, callbackSize, trampoline, saveCpuStateMask); };
 
 	//Hooks an address by passing a buffer as the callback.
 	//Parameters:
@@ -438,7 +426,7 @@ public:
 	//                            pointer to a variable of type size_t that receives the minimum size needed
 	//                            to store the trampoline, otherwise if callback is not NULL, data specifies
 	//                            a pointer to a user buffer used to store the trampoline.
-	bool HookBuffer(const uintptr_t address, const void* const callback, const size_t callbackSize, uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0, const HOOK_EX_ALLOCATION_METHOD allocationMethod = HOOK_EX_ALLOCATION_METHOD::SHARED_MEMORY, void* const data = nullptr);
+	bool HookBuffer(const uintptr_t address, const void* const callback, const size_t callbackSize, uintptr_t* const trampoline = nullptr, const DWORD saveCpuStateMask = 0);
 
 	//Removes a previously placed hook at 'address'.
 	//Parameters:

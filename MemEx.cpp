@@ -18,18 +18,9 @@
 #define PUSH4(value) PLACE1(0x68); PLACE(uint32_t, value)
 
 #define CALL_RELATIVE(sourceAddress, functionAddress) PLACE1(0xE8); PLACE(ptrdiff_t, (ptrdiff_t)(functionAddress) - reinterpret_cast<ptrdiff_t>(sourceAddress + 4))
+#define CALL_ABSOLUTE(address) PLACE2(0xB848); PLACE8(address); PLACE2(0xD0FF);
 
-#ifdef _WIN64
-	#define HOOK_JUMP_SIZE 12
-	#define HOOK_MAX_NUM_REPLACED_BYTES 26
-	#define CALL_ABSOLUTE(address) PLACE2(0xB848); PLACE8(address); PLACE2(0xD0FF);
-	#define CALCULATE_SAVE_CPU_STATE_BUFFER_SIZE(mask) (static_cast<size_t>(mask ? HOOK_JUMP_SIZE : 0) + (mask & FLAGS ? 2 : 0) + (mask & GPR ? 22 : 0) + (mask & XMMX ? 78 : 0))
-#else
-	#define HOOK_JUMP_SIZE 5
-	#define HOOK_MAX_NUM_REPLACED_BYTES 19
-	#define CALCULATE_SAVE_CPU_STATE_BUFFER_SIZE(mask) ((mask ? HOOK_JUMP_SIZE : 0) + (mask & FLAGS ? 2 : 0) + (mask & GPR ? 2 : 0) + (mask & XMMX ? 76 : 0))
-#endif
-
+#define HOOK_MAX_NUM_REPLACED_BYTES 19
 #define X86_MAXIMUM_INSTRUCTION_LENGTH 15
 
 //LDE
@@ -350,7 +341,7 @@ uintptr_t MemEx::ReadMultiLevelPointer(uintptr_t base, const std::vector<uint32_
 	return base;
 }
 
-bool MemEx::Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline, const DWORD saveCpuStateMask, const HOOK_EX_ALLOCATION_METHOD allocationMethod, void* const data)
+bool MemEx::Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline, const DWORD saveCpuStateMask)
 {
 	size_t size = 0;
 	constexpr uint8_t hookMark[12] = { 0xD6, 0xD6, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0xD6, 0xD6 };
@@ -362,104 +353,83 @@ bool MemEx::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 	return HookBuffer(address, callback, static_cast<const size_t>(reinterpret_cast<ptrdiff_t>(tmp) - reinterpret_cast<ptrdiff_t>(callback)), trampoline, saveCpuStateMask);
 }
 
-bool MemEx::HookBuffer(const uintptr_t address, const void* const callback, const size_t callbackSize, uintptr_t* const trampoline, const DWORD saveCpuStateMask, const HOOK_EX_ALLOCATION_METHOD allocationMethod, void* const data)
+bool MemEx::HookBuffer(const uintptr_t address, const void* const callback, const size_t callbackSize, uintptr_t* const trampoline, const DWORD saveCpuStateMask)
 {
 	uint8_t originalCode[HOOK_MAX_NUM_REPLACED_BYTES];
 	if (!m_hProcess || !Read(address, originalCode, sizeof(originalCode)))
 		return false;
 
 	size_t numReplacedBytes = 0;
-	while (numReplacedBytes < HOOK_JUMP_SIZE)
+	while (numReplacedBytes < 5)
 		numReplacedBytes += GetInstructionLength(address + numReplacedBytes);
 
-	const size_t saveCpuStateBufferSize = CALCULATE_SAVE_CPU_STATE_BUFFER_SIZE(saveCpuStateMask);
-	const size_t trampolineSize = numReplacedBytes + HOOK_JUMP_SIZE;
+#ifdef _WIN64
+	const bool callbackNearHook = (reinterpret_cast<ptrdiff_t>(callback) - static_cast<ptrdiff_t>(address + 5)) < 0x80000000;
+	const size_t saveCpuStateBufferSize = static_cast<size_t>(saveCpuStateMask || (!saveCpuStateMask && !callbackNearHook) ? 14 : 0) + (saveCpuStateMask ? 8 : 0) + (saveCpuStateMask & FLAGS ? 2 : 0) + (saveCpuStateMask & GPR ? 22 : 0) + (saveCpuStateMask & XMMX ? 78 : 0);
+#else
+	const size_t saveCpuStateBufferSize = (saveCpuStateMask ? 5 : 0) + (saveCpuStateMask & FLAGS ? 2 : 0) + (saveCpuStateMask & GPR ? 2 : 0) + (saveCpuStateMask & XMMX ? 76 : 0);
+#endif
+	const size_t trampolineSize = numReplacedBytes + 5;
 	const size_t bufferSize = saveCpuStateBufferSize + trampolineSize;
 
-	//Allocate buffer to store the saveCpuStateBuffer and the trampoline
-	uintptr_t bufferAddress = NULL, lastAddress; uint8_t codeCaveNullByte = 0;
-	switch (allocationMethod)
+	HookStruct hook; uintptr_t bufferAddress = NULL; uint8_t codeCaveNullByte = 0;
+	if (!(bufferAddress = FindCodeCaveBatch(bufferSize, { 0x00, 0xCC }, &codeCaveNullByte, address > 0x7ffff000 ? address - 0x7ffff000 : 0, address + 0x7ffff000)))
 	{
-	case HOOK_EX_ALLOCATION_METHOD::SHARED_MEMORY:
-		if (!m_hFileMapping && !(m_hFileMapping = AllocateSharedMemory(m_numPages * dwPageSize, reinterpret_cast<PVOID&>(m_thisMappedView), reinterpret_cast<PVOID&>(m_targetMappedView))))
-			return false;
+		hook.useCodeCaveAsMemory = false;
 
-		lastAddress = reinterpret_cast<uintptr_t>(m_thisMappedView + m_numPages * 4096);
-		for (auto& hook : m_Hooks)
+		for (auto page : m_Pages)
 		{
-			if (lastAddress - hook.first >= bufferSize)
+			if (0x1000 - page.second > bufferSize)
 			{
-				bufferAddress = lastAddress;
+				bufferAddress = page.second;
+				page.second += bufferSize;
 				break;
 			}
-
-			lastAddress = hook.first;
 		}
 
 		if (!bufferAddress)
 		{
-			if (static_cast<ptrdiff_t>(lastAddress) - reinterpret_cast<ptrdiff_t>(m_thisMappedView + 0x80) >= static_cast<ptrdiff_t>(bufferSize))
-				bufferAddress = lastAddress;
-			else //Resize shared memory
+			MEMORY_BASIC_INFORMATION mbi;
+			uintptr_t newBufferAddress = address > 0x7ffff000 ? address - 0x7ffff000 : 0;
+			if (!VirtualQueryEx(m_hProcess, reinterpret_cast<LPVOID>(newBufferAddress), &mbi, sizeof(MEMORY_BASIC_INFORMATION)))
+				return false;
+
+			if (reinterpret_cast<uintptr_t>(mbi.BaseAddress) < (address > 0x7ffff000 ? address - 0x7ffff000 : 0))
+				newBufferAddress = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+
+			do
 			{
-				std::unique_ptr<uint8_t[]> tmpBuffer = std::make_unique<uint8_t[]>(m_numPages * 4096);
-				memcpy(tmpBuffer.get(), m_thisMappedView, m_numPages * 4096);
-
-				m_numPages += (bufferSize > 4096) ? static_cast<uint8_t>(bufferSize >> 12) : static_cast<uint8_t>(1);
-				if (!UnmapLocalViewOfFile(m_thisMappedView) || !UnmapRemoteViewOfFile(m_targetMappedView) || !static_cast<bool>(CloseHandle(m_hFileMapping)) ||
-					!(m_hFileMapping = AllocateSharedMemory(m_numPages * dwPageSize, reinterpret_cast<PVOID&>(m_thisMappedView), reinterpret_cast<PVOID&>(m_targetMappedView))))
-					return false;
-
-				std::map<uintptr_t, HookStruct> oldHooks = m_Hooks;
-				m_Hooks.clear();
-
-				uint8_t* nextAddress = m_thisMappedView + m_numPages * 4096;
-				for (auto& hook : oldHooks)
+				if (mbi.State == MEM_FREE)
 				{
-					memcpy(nextAddress - (static_cast<size_t>(hook.second.callbackSize) + hook.second.trampolineSize), reinterpret_cast<const void*>(hook.first), static_cast<size_t>(hook.second.callbackSize) + hook.second.trampolineSize);
-					m_Hooks[reinterpret_cast<uintptr_t>(nextAddress)] = hook.second;
-
-#ifdef _WIN64
-					Write<uintptr_t>(hook.second.address + 2, reinterpret_cast<uintptr_t>(nextAddress));
-#else
-					Write<ptrdiff_t>(reinterpret_cast<uintptr_t>(nextAddress + hook.second.callbackSize + hook.second.trampolineSize + 1), static_cast<ptrdiff_t>(address + numReplacedBytes) - reinterpret_cast<ptrdiff_t>(nextAddress + hook.second.callbackSize + hook.second.trampolineSize));
-
-					Write<ptrdiff_t>(hook.second.address + hook.second.trampolineSize - 5, reinterpret_cast<ptrdiff_t>(nextAddress) - static_cast<ptrdiff_t>(hook.second.address + hook.second.trampolineSize));
-#endif
-
-					nextAddress += static_cast<size_t>(hook.second.callbackSize) + hook.second.trampolineSize;
+					do
+					{
+						if ((bufferAddress = reinterpret_cast<uintptr_t>(VirtualAllocEx(m_hProcess, reinterpret_cast<LPVOID>(newBufferAddress), 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE))))
+							break;
+						else
+							newBufferAddress += 0x1000;
+					} while (newBufferAddress < reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize);
 				}
+				else
+					newBufferAddress = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+			} while (VirtualQueryEx(m_hProcess, reinterpret_cast<LPVOID>(newBufferAddress), &mbi, sizeof(MEMORY_BASIC_INFORMATION)) && newBufferAddress < address + 0x7ffff000 && !bufferAddress);
 
-				bufferAddress = reinterpret_cast<uintptr_t>(nextAddress);
-			}
-		}
-
-		bufferAddress -= bufferSize;
-		break;
-	case HOOK_EX_ALLOCATION_METHOD::CODE_CAVE:
-		if (data)
-			bufferAddress = FindCodeCaveBatch(bufferSize, *reinterpret_cast<const std::vector<uint8_t>*>(data), &codeCaveNullByte);
-		else
-			bufferAddress = FindCodeCaveBatch(bufferSize, { 0x00, 0xCC }, &codeCaveNullByte);
-		break;
-	case HOOK_EX_ALLOCATION_METHOD::USER_BUFFER:
-		if (callback)
-			bufferAddress = reinterpret_cast<uintptr_t>(data);
-		else
-		{
-			*reinterpret_cast<size_t*>(data) = bufferSize;
-			return true;
+			if (bufferAddress)
+				m_Pages[bufferAddress] = bufferSize;
 		}
 	}
 
-	//The call to memset is here just to prevent the "Using unitialized memory bufferAddress" warning. IKR
-	DWORD oldProtect;
-	if (!bufferAddress || !memset(reinterpret_cast<void*>(bufferAddress), 0, 1) || !VirtualProtect(reinterpret_cast<LPVOID>(bufferAddress), bufferSize, PAGE_EXECUTE_READWRITE, &oldProtect))
+	if (!bufferAddress)
 		return false;
 
-	uint8_t* buffer = reinterpret_cast<uint8_t*>(bufferAddress);
+	std::unique_ptr<uint8_t[]> bufferPtr = std::make_unique<uint8_t[]>(bufferSize);
+	uint8_t* buffer = bufferPtr.get();
+
 	if (saveCpuStateMask)
 	{
+#ifdef _WIN64
+		PLACE8(callback);
+#endif
+
 		if (saveCpuStateMask & GPR)
 		{
 #ifdef _WIN64
@@ -482,22 +452,20 @@ bool MemEx::HookBuffer(const uintptr_t address, const void* const callback, cons
 			PLACE1(0xF3); PLACE4(0x24547F0F); PLACE1(0x20); // movdqu xmmword ptr ss:[r/esp+0x20], xmm2
 			PLACE1(0xF3); PLACE4(0x244C7F0F); PLACE1(0x10); // movdqu xmmword ptr ss:[r/esp+0x10], xmm1
 			PLACE1(0xF3); PLACE4(0x24047F0F); // movdqu xmmword ptr ss:[r/esp], xmm0
-		}
-		if (saveCpuStateMask & FLAGS)
-		{
-			PLACE1(0x9C);
-		} // pushfd/q
 	}
-
-	// execute callback
-	memcpy(buffer, callback, callbackSize); buffer += callbackSize;
-
-	if (saveCpuStateMask)
-	{
 		if (saveCpuStateMask & FLAGS)
-		{
-			PLACE1(0x9D);
-		} // popfd/q
+			{ PLACE1(0x9C); } // pushfd/q
+
+#ifdef _WIN64
+		PLACE4(0x28EC8348); // sub rsp, 0x28
+		PLACE2(0x15FF); PLACE4((saveCpuStateMask & GPR ? -11 : 0) + (saveCpuStateMask & XMMX ? -39 : 0) + (saveCpuStateMask & FLAGS ? -1 : 0) - 18);
+		PLACE4(0x28C48348); // add rsp, 0x28
+#else
+		PLACE1(0xE8); PLACE4(reinterpret_cast<ptrdiff_t>(callback) - reinterpret_cast<ptrdiff_t>(buffer + 4));
+#endif
+
+		if (saveCpuStateMask & FLAGS)
+			{ PLACE1(0x9D); } // popfd/q
 		if (saveCpuStateMask & XMMX)
 		{
 			PLACE1(0xF3); PLACE4(0x24046F0F); // movdqu xmm0, xmmword ptr ss:[r/esp]
@@ -521,94 +489,39 @@ bool MemEx::HookBuffer(const uintptr_t address, const void* const callback, cons
 			PLACE1(0x61); // popad
 #endif
 		}
-	}
-
-	// execute callback
-	memcpy(buffer, callback, callbackSize); buffer += callbackSize;
-
-	if (saveCpuStateMask)
-	{
-		if (saveCpuStateMask & FLAGS)
-		{
-			PLACE1(0x9D);
-		} // popfd/q
-		if (saveCpuStateMask & XMMX)
-		{
-			PLACE1(0xF3); PLACE4(0x24046F0F); // movdqu xmm0, xmmword ptr ss:[r/esp]
-			PLACE1(0xF3); PLACE4(0x244C6F0F); PLACE1(0x10); // movdqu xmm1, xmmword ptr ss:[r/esp+0x10]
-			PLACE1(0xF3); PLACE4(0x24546F0F); PLACE1(0x20); // movdqu xmm2, xmmword ptr ss:[r/esp+0x20]
-			PLACE1(0xF3); PLACE4(0x245C6F0F); PLACE1(0x30); // movdqu xmm3, xmmword ptr ss:[r/esp+0x30]
-			PLACE1(0xF3); PLACE4(0x24646F0F); PLACE1(0x40); // movdqu xmm4, xmmword ptr ss:[r/esp+0x40]
-			PLACE1(0xF3); PLACE4(0x246C6F0F); PLACE1(0x50); // movdqu xmm5, xmmword ptr ss:[r/esp+0x50]
+}
 #ifdef _WIN64
-			PLACE4(0x60C48348); // add rsp, 0x60
-#else
-			PLACE1(0x83); PLACE2(0x60C4); // add esp, 0x60
+	else if (!callbackNearHook)
+		{ PLACE2(0x25FF); PLACE4(0); PLACE8(callback); }
 #endif
-		}
-		if (saveCpuStateMask & GPR)
-		{
-#ifdef _WIN64
-			// pop r11, r10, r9, r8, rdx, rcx, rax
-			PLACE8(0x584159415A415B41); PLACE1(0x5A); PLACE2(0x5859);
-#else
-			PLACE1(0x61); // popad
-#endif
-		}
-	}
 
 	//Copy original instructions
-	memcpy(reinterpret_cast<void*>(buffer), reinterpret_cast<const void*>(originalCode), numReplacedBytes); buffer += numReplacedBytes;
+	memcpy(reinterpret_cast<void*>(buffer), reinterpret_cast<const void*>(address), numReplacedBytes);
+	if (*buffer == 0xE9)
+		*reinterpret_cast<uint32_t*>(buffer + 1) = static_cast<uint32_t>(static_cast<ptrdiff_t>(*reinterpret_cast<uint32_t*>(buffer + 1) + address + 5) - static_cast<ptrdiff_t>(bufferAddress + (bufferPtr.get() - buffer) + 5));
+	buffer += numReplacedBytes;
 
 	//Jump back to original function
-#ifdef _WIN64
-	PLACE2(0xB848); PLACE8(address + numReplacedBytes); PLACE2(0xE0FF);
-#else
+	PLACE1(0xE9); PLACE4(static_cast<ptrdiff_t>(address + numReplacedBytes) - reinterpret_cast<ptrdiff_t>(buffer + 4));
 
-//#if USE_CODE_CAVE_AS_MEMORY
-//	PLACE1(0xE9); PLACE4(static_cast<ptrdiff_t>(address + numReplacedBytes) - static_cast<ptrdiff_t>(bufferAddress + (buffer - bufferPtr.get()) + 4));
-//#else
-//	PLACE1(0xE9); PLACE4(static_cast<ptrdiff_t>(address + numReplacedBytes) - static_cast<ptrdiff_t>(targetBuffer + (reinterpret_cast<uintptr_t>(buffer) - bufferAddress) + 4));
-//#endif
-
-#endif
-
-	//Jump from hooked function to callback
-	uint8_t jump[HOOK_JUMP_SIZE]; buffer = reinterpret_cast<uint8_t*>(jump);
-#if USE_CODE_CAVE_AS_MEMORY
-	if (Write(bufferAddress, bufferPtr.get(), bufferSize, true))
+	if (!Write(bufferAddress, bufferPtr.get(), bufferSize))
 		return false;
 
+	//Jump from hooked function to callback(x32 && !saveCpuStateMask) / buffer(x64)
+	uint8_t jump[5]; buffer = jump;
 #ifdef _WIN64
-	PLACE2(0xB848); PLACE8(bufferAddress); PLACE2(0xE0FF);
+	PLACE1(0xE9); PLACE4(((!saveCpuStateMask && callbackNearHook) ? reinterpret_cast<ptrdiff_t>(callback) : static_cast<ptrdiff_t>(bufferAddress + 8)) - reinterpret_cast<ptrdiff_t>(buffer + 4));
 #else
-	PLACE1(0xE9); PLACE4(static_cast<ptrdiff_t>(bufferAddress) - static_cast<ptrdiff_t>(address + 5));
+	PLACE1(0xE9); PLACE4((saveCpuStateMask ? static_cast<ptrdiff_t>(bufferAddress) : reinterpret_cast<ptrdiff_t>(callback)) - reinterpret_cast<ptrdiff_t>(buffer + 4));
 #endif
 
-	if (trampoline)
-		*trampoline = bufferAddress + saveCpuStateBufferSize;
-#else
-
-	//#ifdef _WIN64
-	//	PLACE2(0xB848); PLACE8(targetBuffer); PLACE2(0xE0FF);
-	//#else
-	//	PLACE1(0xE9); PLACE4(static_cast<ptrdiff_t>(targetBuffer) - static_cast<ptrdiff_t>(address + 5));
-	//#endif
-
-		//if (trampoline)
-		//	*trampoline = targetBuffer + saveCpuStateBufferSize;
-#endif
-
-	if (!Write(address, jump, HOOK_JUMP_SIZE))
+	if (!Write(address, jump, 5))
 		return false;
 
-	HookStruct hook;
-	hook.address = address;
-	hook.callbackSize = static_cast<uint16_t>(callbackSize);
-	hook.saveCpuStateBufferSize = static_cast<uint8_t>(saveCpuStateBufferSize);
-	hook.trampolineSize = static_cast<uint8_t>(trampolineSize);
-	hook.allocationMethod = allocationMethod;
+	hook.buffer = bufferAddress;
+	hook.bufferSize = static_cast<uint8_t>(bufferSize);
 	hook.codeCaveNullByte = codeCaveNullByte;
+	hook.numReplacedBytes = static_cast<uint8_t>(numReplacedBytes);
 
 	m_Hooks[bufferAddress] = hook;
 
@@ -616,25 +529,36 @@ bool MemEx::HookBuffer(const uintptr_t address, const void* const callback, cons
 }
 
 bool MemEx::Unhook(const uintptr_t address)
-{
-	for (auto& hook : m_Hooks)
+{	
+	//Restore original instruction(s)
+	std::unique_ptr<uint8_t[]> replacedBytes = std::make_unique<uint8_t[]>(m_Hooks[address].numReplacedBytes);
+	if (!Read(m_Hooks[address].buffer + m_Hooks[address].bufferSize - 5 - m_Hooks[address].numReplacedBytes, replacedBytes.get(), m_Hooks[address].numReplacedBytes))
+		return false;
+
+	if (*(replacedBytes.get() + 1) == 0xE9)
+		*reinterpret_cast<uint32_t*>(replacedBytes.get() + 1) = static_cast<uint32_t>(static_cast<ptrdiff_t>(*reinterpret_cast<uint32_t*>(replacedBytes.get() + 1) + (m_Hooks[address].buffer + m_Hooks[address].bufferSize)) - static_cast<ptrdiff_t>(address + 5));
+
+	if (!Write(address, replacedBytes.get(), m_Hooks[address].numReplacedBytes))
+		return false;
+
+	//Free memory used to store the buffer
+	if (m_Hooks[address].useCodeCaveAsMemory && !Set(m_Hooks[address].buffer, m_Hooks[address].codeCaveNullByte, m_Hooks[address].bufferSize))
+		return false;
+	else
 	{
-		if (hook.second.address == address)
+		for (auto page : m_Pages)
 		{
-			//Restore original instruction(s)
-			Write(address, reinterpret_cast<const void*>(hook.first + + hook.second.saveCpuStateBufferSize + hook.second.callbackSize), hook.second.trampolineSize - HOOK_JUMP_SIZE);
-
-#if USE_CODE_CAVE_AS_MEMORY
-			memset(reinterpret_cast<void*>(hook.first), 0xCC, static_cast<size_t>(static_cast<size_t>(hook.second.callbackSize) + hook.second.trampolineSize));
-#endif
-
-			m_Hooks.erase(hook.first);
-						
-			return static_cast<bool>(FlushInstructionCache(m_hProcess, reinterpret_cast<LPCVOID>(address), hook.second.trampolineSize - HOOK_JUMP_SIZE));
+			if (page.first == m_Hooks[address].buffer && !(page.second -= m_Hooks[address].bufferSize))
+			{
+				VirtualFreeEx(m_hProcess, reinterpret_cast<LPVOID>(page.first), 0x1000, MEM_FREE);
+				m_Pages.erase(m_Hooks[address].buffer);
+			}
 		}
 	}
 
-	return false;
+	m_Hooks.erase(address);
+
+	return static_cast<bool>(FlushInstructionCache(m_hProcess, reinterpret_cast<LPCVOID>(address), static_cast<SIZE_T>(m_Hooks[address].numReplacedBytes)));
 }
 
 uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, uintptr_t start, const uintptr_t end, const DWORD protection) const
