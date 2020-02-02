@@ -287,8 +287,6 @@ uintptr_t MemIn::ReadMultiLevelPointer(uintptr_t base, const std::vector<uint32_
 	return base;
 }
 
-/*If you perform a mid function hook(the saveCpuStateMask is not zero),
-you should not use the trampoline to try execute the rest of the original function.*/
 bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t* const trampoline, const DWORD saveCpuStateMask)
 {
 	ProtectRegion pr(address, HOOK_MAX_NUM_REPLACED_BYTES);
@@ -431,7 +429,10 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 #endif
 
 	//Copy original instructions
-	memcpy(reinterpret_cast<void*>(buffer), reinterpret_cast<const void*>(address), numReplacedBytes); buffer += numReplacedBytes;
+	memcpy(reinterpret_cast<void*>(buffer), reinterpret_cast<const void*>(address), numReplacedBytes); 
+	if (*buffer == 0xE9)
+		*reinterpret_cast<uint32_t*>(buffer + 1) = static_cast<ptrdiff_t>(*reinterpret_cast<uint32_t*>(buffer + 1) + address + 5) - reinterpret_cast<ptrdiff_t>(buffer + 5);
+	buffer += numReplacedBytes;
 
 	//Jump back to original function
 	PLACE1(0xE9); PLACE4(static_cast<ptrdiff_t>(address + numReplacedBytes) - reinterpret_cast<ptrdiff_t>(buffer + 4));
@@ -465,6 +466,8 @@ bool MemIn::Unhook(const uintptr_t address)
 
 	//Restore original instruction(s)
 	memcpy(reinterpret_cast<void*>(address), reinterpret_cast<const void*>(m_Hooks[address].buffer + m_Hooks[address].bufferSize - 5 - m_Hooks[address].numReplacedBytes), m_Hooks[address].numReplacedBytes);
+	if (*reinterpret_cast<uint8_t*>(address) == 0xE9)
+		*reinterpret_cast<uint32_t*>(address + 1) = static_cast<ptrdiff_t>(*reinterpret_cast<uint32_t*>(address + 1) + (m_Hooks[address].buffer + m_Hooks[address].bufferSize)) - static_cast<ptrdiff_t>(address + 5);
 
 	//Free memory used to store the buffer
 	if (m_Hooks[address].useCodeCaveAsMemory)
