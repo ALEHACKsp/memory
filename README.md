@@ -11,10 +11,9 @@ There is an internal (MemIn.h", "MemIn.cpp") and an external ("MemEx.h", "MemEx.
  - Hook, Unhook()
  - Call() **[EX]**
  - GetInstructionLength()
- - FindCodeCave()
+ - Inject() **[EX]**
+ - FindCodeCave(), FindCodeCaveBatch()
  - PatternScan(), AOBScan()
- - PatternScanModule(), AOBScanModule()
- - PatternScanAllModules(), AOBScanAllModules()
  - AOBToPattern()
  - ReadMultiLevelPointer()
  - Read(), Write(), Patch()
