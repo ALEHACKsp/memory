@@ -39,7 +39,7 @@ int main()
   MemEx m;
   m.WaitAttach("target.exe");
   
-  uintptr_t address = m.AOBScanModule("64 A1 ?? ?? ?? ?? BA 08 28 7A 77 8B 48 ??", "some_module.dll");
+  uintptr_t address = m.AOBScan("64 A1 ?? ?? ?? ?? BA 08 28 7A 77 8B 48 ??", ScanBoundaries(SCAN_BOUNDARIES::MODULE, "some_module.dll"));
   m.Patch(address, "\x8B\x15", 2);
   
   return 0;
