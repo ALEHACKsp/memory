@@ -51,6 +51,19 @@ inline void parseModRM(uint8_t** b, const bool addressPrefix)
 		*b += 2;
 };
 
+ScanBoundaries::ScanBoundaries(const SCAN_BOUNDARIES scanBoundaries, const uintptr_t start, const uintptr_t end)
+	: scanBoundaries(scanBoundaries),
+	start(start),
+	end(end) {}
+
+ScanBoundaries::ScanBoundaries(const SCAN_BOUNDARIES scanBoundaries, const TCHAR* const moduleName)
+	: scanBoundaries(scanBoundaries),
+	moduleName(moduleName) { end = 0; }
+
+ScanBoundaries::ScanBoundaries(const SCAN_BOUNDARIES scanBoundaries)
+	: scanBoundaries(scanBoundaries),
+	start(0), end(0) {}
+
 //MD5
 #define ROL(x,s)((x<<s)|x>>(32-s))
 static const uint32_t r[] = { 7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21 };
@@ -190,9 +203,45 @@ bool MemIn::HashMD5(const uintptr_t address, const size_t size, uint8_t* const o
 	return true;
 }
 
-uintptr_t MemIn::PatternScan(const char* const pattern, const char* const mask, uintptr_t start, const uintptr_t end, const DWORD protect)
+uintptr_t MemIn::PatternScan(const char* const pattern, const char* const mask, const ScanBoundaries& scanBoundaries, const DWORD protect)
 {
 	std::atomic<uintptr_t> address = 0; std::atomic<size_t> finishCount = 0;
+
+	uintptr_t start = 0, end = 0;
+	switch (scanBoundaries.scanBoundaries)
+	{
+	case SCAN_BOUNDARIES::RANGE:
+		start = scanBoundaries.start, end = scanBoundaries.end;
+		break;
+	case SCAN_BOUNDARIES::MODULE:
+		DWORD moduleSize;
+		if (!(start = GetModuleBase(scanBoundaries.moduleName, &moduleSize)))
+			return 0;
+		end = start + moduleSize;
+		break;
+	case SCAN_BOUNDARIES::ALL_MODULES:
+	{
+		struct PatternInfo
+		{
+			const char* const pattern, * const mask;
+			uintptr_t address;
+			DWORD protect;
+		};
+
+		PatternInfo pi = { pattern, mask, 0, protect };
+
+		EnumModules(GetCurrentProcessId(),
+			[](MODULEENTRY32& me, void* param)
+			{
+				PatternInfo* pi = static_cast<PatternInfo*>(param);
+				return !(pi->address = MemIn::PatternScan(pi->pattern, pi->mask, ScanBoundaries(SCAN_BOUNDARIES::RANGE, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr + me.modBaseSize)), pi->protect));
+			}, &pi);
+
+		return pi.address;
+	}
+	default:
+		return 0;
+	}
 
 #if SCAN_IN_MULTITHREADING
 	auto numThreads = std::thread::hardware_concurrency();
@@ -214,62 +263,12 @@ uintptr_t MemIn::PatternScan(const char* const pattern, const char* const mask, 
 	return address.load();
 }
 
-uintptr_t MemIn::AOBScan(const char* const AOB, const uintptr_t start, const uintptr_t end, const DWORD protect)
+uintptr_t MemIn::AOBScan(const char* const AOB, const ScanBoundaries& scanBoundaries, const DWORD protect)
 {
 	std::string pattern, mask;
 	AOBToPattern(AOB, pattern, mask);
 
-	return PatternScan(pattern.c_str(), mask.c_str(), start, end, protect);
-}
-
-uintptr_t MemIn::PatternScanModule(const char* const pattern, const char* const mask, const TCHAR* const moduleName, const DWORD protect)
-{
-	uintptr_t moduleBase; DWORD moduleSize;
-	if (!(moduleBase = GetModuleBase(moduleName, &moduleSize)))
-		return 0;
-
-	return PatternScan(pattern, mask, moduleBase, moduleBase + moduleSize, protect);
-}
-
-uintptr_t MemIn::AOBScanModule(const char* const AOB, const TCHAR* const moduleName, const DWORD protect)
-{
-	std::string pattern, mask;
-	AOBToPattern(AOB, pattern, mask);
-
-	return PatternScanModule(pattern.c_str(), mask.c_str(), moduleName, protect);
-}
-
-//Credits: https://guidedhacking.com/threads/internal-pattern-scanning-without-know-the-module.13315/
-uintptr_t MemIn::PatternScanAllModules(const char* const pattern, const char* const mask, const DWORD protect)
-{
-	struct PatternInfo
-	{
-		const char* const pattern, * const mask;
-		uintptr_t address;
-		DWORD protect;
-	};
-
-	PatternInfo pi = { pattern, mask, 0, protect };
-
-	EnumModules(
-		GetCurrentProcessId(),
-		[](MODULEENTRY32& me, void* param)
-		{
-			PatternInfo* pi = static_cast<PatternInfo*>(param);
-			return !(pi->address = MemIn::PatternScan(pi->pattern, pi->mask, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr + me.modBaseSize), pi->protect));
-		},
-		&pi
-	);
-
-	return pi.address;
-}
-
-uintptr_t MemIn::AOBScanAllModules(const char* const AOB, const DWORD protect)
-{
-	std::string pattern, mask;
-	AOBToPattern(AOB, pattern, mask);
-
-	return PatternScanAllModules(pattern.c_str(), mask.c_str(), protect);
+	return PatternScan(pattern.c_str(), mask.c_str(), scanBoundaries, protect);
 }
 
 //Based on https://guidedhacking.com/threads/finddmaaddy-c-multilevel-pointer-function.6292/
@@ -307,7 +306,7 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 	const size_t bufferSize = saveCpuStateBufferSize + trampolineSize;
 
 	HookStruct hook; uintptr_t bufferAddress = NULL; uint8_t codeCaveNullByte = 0;
-	if(!(bufferAddress = FindCodeCaveBatch(bufferSize, { 0x00, 0xCC }, &codeCaveNullByte, address > 0x7ffff000 ? address - 0x7ffff000 : 0, address + 0x7ffff000)))
+	if(!(bufferAddress = FindCodeCaveBatch(bufferSize, { 0x00, 0xCC }, &codeCaveNullByte, ScanBoundaries(SCAN_BOUNDARIES::RANGE, address > 0x7ffff000 ? address - 0x7ffff000 : 0, address + 0x7ffff000))))
 	{
 		hook.useCodeCaveAsMemory = false;
 		
@@ -431,7 +430,7 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 	//Copy original instructions
 	memcpy(reinterpret_cast<void*>(buffer), reinterpret_cast<const void*>(address), numReplacedBytes); 
 	if (*buffer == 0xE9)
-		*reinterpret_cast<uint32_t*>(buffer + 1) = static_cast<ptrdiff_t>(*reinterpret_cast<uint32_t*>(buffer + 1) + address + 5) - reinterpret_cast<ptrdiff_t>(buffer + 5);
+		*reinterpret_cast<uint32_t*>(buffer + 1) = static_cast<uint32_t>(static_cast<ptrdiff_t>(*reinterpret_cast<uint32_t*>(buffer + 1) + address + 5) - reinterpret_cast<ptrdiff_t>(buffer + 5));
 	buffer += numReplacedBytes;
 
 	//Jump back to original function
@@ -467,7 +466,7 @@ bool MemIn::Unhook(const uintptr_t address)
 	//Restore original instruction(s)
 	memcpy(reinterpret_cast<void*>(address), reinterpret_cast<const void*>(m_Hooks[address].buffer + m_Hooks[address].bufferSize - 5 - m_Hooks[address].numReplacedBytes), m_Hooks[address].numReplacedBytes);
 	if (*reinterpret_cast<uint8_t*>(address) == 0xE9)
-		*reinterpret_cast<uint32_t*>(address + 1) = static_cast<ptrdiff_t>(*reinterpret_cast<uint32_t*>(address + 1) + (m_Hooks[address].buffer + m_Hooks[address].bufferSize)) - static_cast<ptrdiff_t>(address + 5);
+		*reinterpret_cast<uint32_t*>(address + 1) = static_cast<uint32_t>(static_cast<ptrdiff_t>(*reinterpret_cast<uint32_t*>(address + 1) + (m_Hooks[address].buffer + m_Hooks[address].bufferSize)) - static_cast<ptrdiff_t>(address + 5));
 
 	//Free memory used to store the buffer
 	if (m_Hooks[address].useCodeCaveAsMemory)
@@ -489,7 +488,7 @@ bool MemIn::Unhook(const uintptr_t address)
 	return static_cast<bool>(FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<LPCVOID>(address), static_cast<SIZE_T>(m_Hooks[address].numReplacedBytes)));
 }
 
-uintptr_t MemIn::FindCodeCave(const size_t size, const uint32_t nullByte, uintptr_t start, const uintptr_t end, const DWORD protection)
+uintptr_t MemIn::FindCodeCave(const size_t size, const uint32_t nullByte, const ScanBoundaries& scanBoundaries, const DWORD protection)
 {
 	if (nullByte != -1)
 	{
@@ -498,11 +497,47 @@ uintptr_t MemIn::FindCodeCave(const size_t size, const uint32_t nullByte, uintpt
 		memset(mask.get(), static_cast<int>('x'), size);
 		mask.get()[size] = '\0';
 
-		return PatternScan(pattern.get(), mask.get(), start, end, protection);
+		return PatternScan(pattern.get(), mask.get(), scanBoundaries, protection);
 	}
 	else
 	{
 		std::atomic<uintptr_t> address = 0; std::atomic<size_t> finishCount = 0;
+
+		uintptr_t start = 0, end = 0;
+		switch (scanBoundaries.scanBoundaries)
+		{
+		case SCAN_BOUNDARIES::RANGE:
+			start = scanBoundaries.start, end = scanBoundaries.end;
+			break;
+		case SCAN_BOUNDARIES::MODULE:
+			DWORD moduleSize;
+			if (!(start = GetModuleBase(scanBoundaries.moduleName, &moduleSize)))
+				return 0;
+			end = start + moduleSize;
+			break;
+		case SCAN_BOUNDARIES::ALL_MODULES:
+		{
+			struct CodeCaveInfo
+			{
+				size_t size;
+				uintptr_t address;
+				DWORD protect;
+			};
+
+			CodeCaveInfo cci = { size, 0, protection };
+
+			EnumModules(GetCurrentProcessId(),
+				[](MODULEENTRY32& me, void* param)
+				{
+					CodeCaveInfo* cci = static_cast<CodeCaveInfo*>(param);
+					return !(cci->address = MemIn::FindCodeCave(cci->size, -1, ScanBoundaries(SCAN_BOUNDARIES::RANGE, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr + me.modBaseSize)), cci->protect));
+				}, &cci);
+
+			return cci.address;
+		}
+		default:
+			return 0;
+		}
 
 #if SCAN_IN_MULTITHREADING
 		auto numThreads = std::thread::hardware_concurrency();
@@ -525,74 +560,11 @@ uintptr_t MemIn::FindCodeCave(const size_t size, const uint32_t nullByte, uintpt
 	}
 }
 
-uintptr_t MemIn::FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte, uintptr_t start, const uintptr_t end, const DWORD protection)
+uintptr_t MemIn::FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte, const ScanBoundaries& scanBoundaries, const DWORD protection)
 {
 	for (auto nullByte : nullBytes)
 	{
-		auto address = FindCodeCave(size, nullByte, start, end, protection);
-		if (address)
-		{
-			if (pNullByte)
-				*pNullByte = nullByte;
-
-			return address;
-		}
-	}
-
-	return 0;
-}
-
-uintptr_t MemIn::FindCodeCaveModule(const size_t size, const uint32_t nullByte, const TCHAR* const moduleName, const DWORD protection)
-{
-	uintptr_t moduleBase; DWORD moduleSize;
-	if (!(moduleBase = GetModuleBase(moduleName, &moduleSize)))
-		return 0;
-
-	return FindCodeCave(size, nullByte, moduleBase, moduleBase + moduleSize, protection);
-}
-
-uintptr_t MemIn::FindCodeCaveModuleBatch(const size_t size, const std::vector<uint8_t>& nullBytes, const TCHAR* const moduleName, uint8_t* const pNullByte, const DWORD protection)
-{
-	for (auto nullByte : nullBytes)
-	{
-		auto address = FindCodeCaveModule(size, nullByte, moduleName, protection);
-		if (address)
-		{
-			if (pNullByte)
-				*pNullByte = nullByte;
-
-			return address;
-		}
-	}
-
-	return 0;
-}
-
-uintptr_t MemIn::FindCodeCaveAllModules(const size_t size, const uint32_t nullByte, const DWORD protection)
-{
-	struct CodeCaveInfo
-	{
-		size_t size;
-		uint32_t nullByte;
-		DWORD protection;
-		uintptr_t address;
-	};
-
-	CodeCaveInfo cci = { size, nullByte, protection };
-
-	EnumModules(GetCurrentProcessId(), [](MODULEENTRY32& me, void* param) {
-		CodeCaveInfo* pcci = reinterpret_cast<CodeCaveInfo*>(param);
-		return (pcci->address = FindCodeCave(pcci->size, pcci->nullByte, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr) + me.modBaseSize, pcci->protection)) == NULL;
-		}, &cci);
-
-	return cci.address;
-}
-
-uintptr_t MemIn::FindCodeCaveAllModulesBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte, const DWORD protection)
-{
-	for (auto nullByte : nullBytes)
-	{
-		auto address = FindCodeCaveAllModules(size, nullByte, protection);
+		auto address = FindCodeCave(size, nullByte, scanBoundaries, protection);
 		if (address)
 		{
 			if (pNullByte)

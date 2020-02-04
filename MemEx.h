@@ -20,6 +20,27 @@
 #define CPTR(pointerToData, sizeOfData) ArgPtr(pointerToData, sizeOfData, true, false)
 #define PTR(pointerToData, sizeOfData) ArgPtr(pointerToData, sizeOfData, false, false)
 
+enum class SCAN_BOUNDARIES
+{
+	RANGE,
+	MODULE,
+	ALL_MODULES
+};
+
+struct ScanBoundaries
+{
+	const SCAN_BOUNDARIES scanBoundaries;
+	union
+	{
+		struct { uintptr_t start, end; };
+		const TCHAR* const moduleName;
+	};
+
+	ScanBoundaries(const SCAN_BOUNDARIES scanBoundaries, const uintptr_t start, const uintptr_t end);
+	ScanBoundaries(const SCAN_BOUNDARIES scanBoundaries, const TCHAR* const moduleName);
+	ScanBoundaries(const SCAN_BOUNDARIES scanBoundaries);
+};
+
 typedef struct ArgPtr
 {
 	const void* const data;
@@ -242,88 +263,32 @@ public:
 	//  outHash [out] A buffer capable of holding a MD5 hash which is 16 bytes.
 	bool HashMD5(const uintptr_t address, const size_t size, uint8_t* const outHash) const;
 
-	//Scans a range of memory for a pattern. By default 'start' and 'end' 
-	//specify that the entire address space should be scanned.
+	//Scans the address space according to 'scanBoundaries' for a pattern & mask.
 	//Parameters:
-	//  pattern [in] A buffer containing the pattern. An example of a
-	//               pattern is "\x68\xAB\x00\x00\x00\x00\x4F\x90\x00\x08".
-	//  mask    [in] A string that specifies how the pattern should be 
-	//               interpreted. If mask[i] is equal to '?', then the
-	//               byte pattern[i] is ignored. A example of a mask is
-	//               "xx????xxxx".
-	//  start   [in] The start address of the region to be scanned.
-	//  end     [in] The end address of the region to be scanned.
-	//  protect [in] Specifies a mask of memory protection constants
-	//               which defines what memory regions will be scanned.
-	//               The default value(-1) specifies that pages with any
-	//               protection between 'start' and 'end' should be scanned.
-	uintptr_t PatternScan(const char* const pattern, const char* const mask, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1) const;
+	//  pattern        [in] A buffer containing the pattern. An example of a
+	//                      pattern is "\x68\xAB\x00\x00\x00\x00\x4F\x90\x00\x08".
+	//  mask           [in] A string that specifies how the pattern should be 
+	//                      interpreted. If mask[i] is equal to '?', then the
+	//                      byte pattern[i] is ignored. A example of a mask is
+	//                      "xx????xxxx".
+	//  scanBoundaries [in] See defination of the ScanBoundaries class.
+	//  protect        [in] Specifies a mask of memory protection constants
+	//                      which defines what memory regions will be scanned.
+	//                      The default value(-1) specifies that pages with any
+	//                      protection between 'start' and 'end' should be scanned.
+	uintptr_t PatternScan(const char* const pattern, const char* const mask, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), const DWORD protect = -1) const;
 	
-	//Scans a range of memory for an AOB. By default 'start' and 'end' 
-	//specify that the entire address space should be scanned.
+	//Scans the address space according to 'scanBoundaries' for an AOB.
 	//Parameters:
 	//  AOB     [in] The array of bytes(AOB) in string form. To specify
 	//               a byte that should be ignore use the '?' character.
 	//               An example of AOB is "68 AB ?? ?? ?? ?? 4F 90 00 08".
-	//  start   [in] The start address of the region to be scanned.
-	//  end     [in] The end address of the region to be scanned.
+	//  scanBoundaries [in] See defination of the SCAN_OUNDARIES enum.
 	//  protect [in] Specifies a mask of memory protection constants
 	//               which defines what memory regions will be scanned.
 	//               The default value(-1) specifies that pages with any
 	//               protection between 'start' and 'end' should be scanned.
-	uintptr_t AOBScan(const char* const AOB, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1) const;
-
-	//Scans a module for a pattern. By default the ".exe" module is scanned.
-	//Parameters:
-	//  pattern    [in] A buffer containing the pattern. An example of a
-	//                  pattern is "\x68\xAB\x00\x00\x00\x00\x4F\x90\x00\x08".
-	//  mask       [in] A string that specifies how the pattern should be 
-	//                  interpreted. If mask[i] is equal to '?', then the
-	//                  byte pattern[i] is ignored. A example of a mask is
-	//                  "xx????xxxx".
-	//  moduleName [in] The name of the module to be scanned.
-	//  protect    [in] Specifies a mask of memory protection constants
-	//                  which defines what memory regions will be scanned.
-	//                  The default value(-1) specifies that pages with any
-	//                  protection between 'start' and 'end' should be scanned.
-	uintptr_t PatternScanModule(const char* const pattern, const char* const mask, const TCHAR* const moduleName = nullptr, const DWORD protect = -1) const;
-	
-	//Scans a module for an AOB. By default the ".exe" module is scanned.
-	//Parameters:
-	//  AOB        [in] The array of bytes(AOB) in string form. To specify
-	//                  a byte that should be ignore use the '?' character.
-	//                  An example of AOB is "68 AB ?? ?? ?? ?? 4F 90 00 08".
-	//  moduleName [in] The name of the module to be scanned.
-	//  protect    [in] Specifies a mask of memory protection constants
-	//                  which defines what memory regions will be scanned.
-	//                  The default value(-1) specifies that pages with any
-	//                  protection between 'start' and 'end' should be scanned.
-	uintptr_t AOBScanModule(const char* const AOB, const TCHAR* const moduleName = nullptr, const DWORD protect = -1) const;
-
-	//Scans all modules for a pattern.
-	//Parameters:
-	//  pattern [in] A buffer containing the pattern. An example of a
-	//               pattern is "\x68\xAB\x00\x00\x00\x00\x4F\x90\x00\x08".
-	//  mask    [in] A string that specifies how the pattern should be 
-	//               interpreted. If mask[i] is equal to '?', then the
-	//               byte pattern[i] is ignored. A example of a mask is
-	//               "xx????xxxx".
-	//  protect [in] Specifies a mask of memory protection constants
-	//               which defines what memory regions will be scanned.
-	//               The default value(-1) specifies that pages with any
-	//               protection between 'start' and 'end' should be scanned.
-	uintptr_t PatternScanAllModules(const char* const pattern, const char* const mask, const DWORD protect = -1) const;
-	
-	//Scans all modules for an AOB on the attached process.
-	//Parameters:
-	//  AOB     [in] The array of bytes(AOB) in string form. To specify
-	//               a byte that should be ignore use the '?' character.
-	//               An example of AOB is "68 AB ?? ?? ?? ?? 4F 90 00 08".
-	//  protect [in] Specifies a mask of memory protection constants
-	//               which defines what memory regions will be scanned.
-	//               The default value(-1) specifies that pages with any
-	//               protection between 'start' and 'end' should be scanned.
-	uintptr_t AOBScanAllModules(const char* const AOB, const DWORD protect = -1) const;
+	uintptr_t AOBScan(const char* const AOB, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), const DWORD protect = -1) const;
 
 	//Reads a multilevel pointer.
 	//Parameters:
@@ -433,86 +398,32 @@ public:
 	//  address [in] The address to be unhooked.
 	bool Unhook(const uintptr_t address);
 	
-	//Scans a range of memory for a code cave.
+	//Scans the address space according to 'scanBoundaries' for a nullByte.
 	//Parameters:
-	//  size       [in] The size of the code cave.
-	//  nullByte   [in] The byte of the code cave. If -1 is specified,
-	//                  the null byte is any byte, that is, FindCodeCave()
-	//                  will return any sequence of the same byte.
-	//  start      [in] The start address of the region to be scanned.
-	//  end        [in] The end address of the region to be scanned.
-	//  protection [in] Specifies a mask of memory protection constants
-	//                  which defines what memory regions will be scanned.
-	//                  The default value(-1) specifies that pages with any
-	//                  protection between 'start' and 'end' should be scanned.
-	uintptr_t FindCodeCave(const size_t size, const uint32_t nullByte = 0x00, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
+	//  size           [in] The size of the code cave.
+	//  nullByte       [in] The byte of the code cave. If -1 is specified,
+	//                      the null byte is any byte, that is, FindCodeCave()
+	//                      will return any sequence of the same byte.
+	//  scanBoundaries [in] See defination of the ScanBoundaries class.
+	//  protection     [in] Specifies a mask of memory protection constants
+	//                      which defines what memory regions will be scanned.
+	//                      The default value(-1) specifies that pages with any
+	//                      protection between 'start' and 'end' should be scanned.
+	uintptr_t FindCodeCave(const size_t size, const uint32_t nullByte = 0x00, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
 
-	//Scans a range of memory for a code cave.
+	//Scans the address space according to 'scanBoundaries' for nullBytes.
 	//Parameters:
-	//  size       [in] The size of the code cave.
-	//  nullBytes  [in] The byte of the code cave.
-	//  pNullByte  [in] If a codecave is found and pNullByte is not NULL,
-	//                  the byte that the codecave contains is written to
-	//                  the variable pointed by pNullByte.
-	//  start      [in] The start address of the region to be scanned.
-	//  end        [in] The end address of the region to be scanned.
-	//  protection [in] Specifies a mask of memory protection constants
-	//                  which defines what memory regions will be scanned.
-	//                  The default value(-1) specifies that pages with any
-	//                  protection between 'start' and 'end' should be scanned.
-	uintptr_t FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte = nullptr, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
-
-	//Scans a module for a code cave.
-	//Parameters:
-	//  size       [in] The size of the code cave.
-	//  nullByte   [in] The byte of the code cave. If -1 is specified,
-	//                  the null byte is any byte, that is, FindCodeCave()
-	//                  will return any sequence of the same byte.
-	//  moduleName [in] The name of the module to be scanned.
-	//  protection [in] Specifies a mask of memory protection constants
-	//                  which defines what memory regions will be scanned.
-	//                  The default value(-1) specifies that pages with any
-	//                  protection between 'start' and 'end' should be scanned.
-	uintptr_t FindCodeCaveModule(const size_t size, const uint32_t nullByte = 0x00, const TCHAR* const moduleName = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
-
-	//Scans a module for a code cave.
-	//Parameters:
-	//  size       [in] The size of the code cave.
-	//  nullBytes  [in] The byte of the code cave.
-	//  moduleName [in] The name of the module to be scanned.
-	//  pNullByte  [in] If a codecave is found and pNullByte is not NULL,
-	//                  the byte that the codecave contains is written to
-	//                  the variable pointed by pNullByte.
-	//  protection [in] Specifies a mask of memory protection constants
-	//                  which defines what memory regions will be scanned.
-	//                  The default value(-1) specifies that pages with any
-	//                  protection between 'start' and 'end' should be scanned.
-	uintptr_t FindCodeCaveModuleBatch(const size_t size, const std::vector<uint8_t>& nullBytes, const TCHAR* const moduleName = nullptr, uint8_t* const pNullByte = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
-
-	//Scans all modules for a code cave.
-	//Parameters:
-	//  size       [in] The size of the code cave.
-	//  nullByte   [in] The byte of the code cave. If -1 is specified,
-	//                  the null byte is any byte, that is, FindCodeCave()
-	//                  will return any sequence of the same byte.
-	//  protection [in] Specifies a mask of memory protection constants
-	//                  which defines what memory regions will be scanned.
-	//                  The default value(-1) specifies that pages with any
-	//                  protection between 'start' and 'end' should be scanned.
-	uintptr_t FindCodeCaveAllModules(const size_t size, const uint32_t nullByte = 0x00, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
-
-	//Scans all modules for a code cave.
-	//Parameters:
-	//  size       [in] The size of the code cave.
-	//  nullBytes  [in] The byte of the code cave.
-	//  pNullByte  [in] If a codecave is found and pNullByte is not NULL,
-	//                  the byte that the codecave contains is written to
-	//                  the variable pointed by pNullByte.
-	//  protection [in] Specifies a mask of memory protection constants
-	//                  which defines what memory regions will be scanned.
-	//                  The default value(-1) specifies that pages with any
-	//                  protection between 'start' and 'end' should be scanned.
-	uintptr_t FindCodeCaveAllModulesBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
+	//  size           [in] The size of the code cave.
+	//  nullBytes      [in] The byte of the code cave.
+	//  pNullByte      [in] If a codecave is found and pNullByte is not NULL,
+	//                      the byte that the codecave contains is written to
+	//                      the variable pointed by pNullByte.
+	//  scanBoundaries [in] See defination of the ScanBoundaries class.
+	//  protection     [in] Specifies a mask of memory protection constants
+	//                      which defines what memory regions will be scanned.
+	//                      The default value(-1) specifies that pages with any
+	//                      protection between 'start' and 'end' should be scanned.
+	uintptr_t FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte = nullptr, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
 
 	//Creates and returns a handle to an unnamed file-mapping object backed by the system's 
 	//paging system. It basically represents a page which can be shared with other processes.
