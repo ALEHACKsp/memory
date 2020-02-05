@@ -88,11 +88,11 @@ MemEx::MemEx()
 	m_targetMappedView(NULL), m_thisMappedView(NULL),
 	m_numPages(0) {}
 
-MemEx::~MemEx() { Detach(); }
+MemEx::~MemEx() { Close(); }
 
-bool MemEx::IsAttached() { return m_hProcess; }
+bool MemEx::IsOpened() { return m_hProcess; }
 
-bool MemEx::Attach(const HANDLE hProcess)
+bool MemEx::Open(const HANDLE hProcess)
 {
 	DWORD tmp;
 	if (m_hProcess || !GetHandleInformation((m_hProcess = hProcess), &tmp))
@@ -104,22 +104,22 @@ bool MemEx::Attach(const HANDLE hProcess)
 
 	return true;
 }
-bool MemEx::Attach(const DWORD dwProcessId) { return Attach(OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_DUP_HANDLE | PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION, FALSE, dwProcessId)); }
-bool MemEx::Attach(const TCHAR* const processName) { return Attach(MemEx::GetProcessIdByName(processName)); }
-bool MemEx::AttachByWindow(const TCHAR* const windowName, const TCHAR* const className) { return Attach(MemEx::GetProcessIdByWindow(windowName, className)); }
+bool MemEx::Open(const DWORD dwProcessId) { return Open(OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_DUP_HANDLE | PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION, FALSE, dwProcessId)); }
+bool MemEx::Open(const TCHAR* const processName) { return Open(MemEx::GetProcessIdByName(processName)); }
+bool MemEx::OpenByWindow(const TCHAR* const windowName, const TCHAR* const className) { return Open(MemEx::GetProcessIdByWindow(windowName, className)); }
 
-void MemEx::WaitAttach(const TCHAR* const processName, const DWORD dwMilliseconds)
+void MemEx::WaitOpen(const TCHAR* const processName, const DWORD dwMilliseconds)
 {
-	while (!Attach(processName))
+	while (!Open(processName))
 		Sleep(dwMilliseconds);
 }
-void MemEx::WaitAttachByWindow(const TCHAR* const windowName, const TCHAR* const className, const DWORD dwMilliseconds)
+void MemEx::WaitOpenByWindow(const TCHAR* const windowName, const TCHAR* const className, const DWORD dwMilliseconds)
 {
-	while (!AttachByWindow(windowName, className))
+	while (!OpenByWindow(windowName, className))
 		Sleep(dwMilliseconds);
 }
 
-void MemEx::Detach()
+void MemEx::Close()
 {
 	if (!m_hProcess)
 		return;
@@ -645,7 +645,7 @@ uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, const 
 		uint8_t realNullByte = nullByte == -1 ? *reinterpret_cast<uint8_t*>(address) : nullByte;
 		while (ReadProcessMemory(m_hProcess, reinterpret_cast<LPCVOID>(address + size + remainingSize), buffer, 4096, &nBytesRead))
 		{
-			for (int i = 0; i < nBytesRead; i++)
+			for (SIZE_T i = 0; i < nBytesRead; i++)
 			{
 				if (buffer[i] == realNullByte)
 					remainingSize++;

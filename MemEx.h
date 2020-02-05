@@ -1,4 +1,4 @@
-//Every parameter of 'uintptr_t' type refers to an address in the context of the virtual address space of the attached process.
+//Every parameter of 'uintptr_t' type refers to an address in the context of the virtual address space of the opened process.
 //Every parameter of pointer type refer to an address/pointer/buffer in the context of the virtual address space of the current process.
 
 #ifndef MEMEX_H
@@ -127,43 +127,43 @@ public:
 	MemEx();
 	~MemEx();
 
-	//Returns true if attached, false otherwise.
-	bool IsAttached();
+	//Returns true if opened, false otherwise.
+	bool IsOpened();
 
-	//Attaches to a process using a handle.
+	//Opens to a process using a handle.
 	//Parameters:
 	//  hProcess [in] A handle to the process. The handle must have the following permissions:
 	//                PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION. If Hook() or
 	//                Call() is used, the handle must also have the following permissions:
 	//                PROCESS_DUP_HANDLE | PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION.
-	bool Attach(const HANDLE hProcess);
+	bool Open(const HANDLE hProcess);
 
-	//Attaches to a process using a PID.
+	//Opens to a process using a PID.
 	//Parameters:
 	//  dwProcessId [in] The process's id.
-	bool Attach(const DWORD dwProcessId);
+	bool Open(const DWORD dwProcessId);
 
-	//Attaches to a process using its name.
+	//Opens to a process using its name.
 	//Parameters:
 	//  processName [in] The process's name.
-	bool Attach(const TCHAR* const processName);
+	bool Open(const TCHAR* const processName);
 
-	//Attaches to a process using a window and class name.
+	//Opens to a process using a window and class name.
 	//Parameters:
 	//  windowName [in] The window's title. If NULL, all window 
 	//                  names match.
 	//  className  [in] The class name. If NULL, any window title
 	//                  matching windowName is considered.
-	bool AttachByWindow(const TCHAR* const windowName, const TCHAR* const className = nullptr);
+	bool OpenByWindow(const TCHAR* const windowName, const TCHAR* const className = nullptr);
 	
-	//Attaches to a process using its name. The functions does not return until a process that matches processName is found.
+	//Opens to a process using its name. The functions does not return until a process that matches processName is found.
 	//Parameters:
 	//  processName    [in] The process's name.
 	//  dwMilliseconds [in] The number of milliseconds the
 	//                      thread sleeps every iteration.
-	void WaitAttach(const TCHAR* const processName, const DWORD dwMilliseconds = 500);
+	void WaitOpen(const TCHAR* const processName, const DWORD dwMilliseconds = 500);
 
-	//Attaches to a process using a window and class name. The functions does not return until a process that matches processName is found.
+	//Opens to a process using a window and class name. The functions does not return until a process that matches processName is found.
 	//Parameters:
 	//  windowName     [in] The window's title. If NULL, all window 
 	//                      names match.
@@ -171,15 +171,15 @@ public:
 	//                      matching windowName is considered.
 	//  dwMilliseconds [in] The number of milliseconds the thread 
 	//                      sleeps every iteration.
-	void WaitAttachByWindow(const TCHAR* const windowName, const TCHAR* const className = nullptr, const DWORD dwMilliseconds = 500);
+	void WaitOpenByWindow(const TCHAR* const windowName, const TCHAR* const className = nullptr, const DWORD dwMilliseconds = 500);
 
 	//Terminates any remote threads and memory allocations created by this library on the process. 
-	void Detach();
+	void Close();
 
-	//Retuns a handle to the attached process.
+	//Retuns a handle to the opened process.
 	HANDLE GetProcess() const;
 
-	//Returns the PID of the attached process.
+	//Returns the PID of the opened process.
 	DWORD GetPid() const;
 
 	//Returns a copy of the data at 'address'.
@@ -256,7 +256,7 @@ public:
 	//  size     [in] The number of bytes to be compared.
 	bool Compare(const uintptr_t address1, const uintptr_t address2, const size_t size) const;
 
-	//Calculates the MD5 hash of a memory region of the attached process.
+	//Calculates the MD5 hash of a memory region of the opened process.
 	//Parameters:
 	//  address [in]  The address where the hash will be calculated.
 	//  size    [in]  The size of the region.
@@ -433,7 +433,7 @@ public:
 
 	//Creates and returns a handle to an unnamed file-mapping object backed by the system's 
 	//paging system. It basically represents a page which can be shared with other processes.
-	//Additionaly, maps a view of the file locally and remotely(attached process).
+	//Additionaly, maps a view of the file locally and remotely.
 	//Parameters:
 	//  size       [in]  The size of the file-mapping object.
 	//  localView  [out] A reference to a variable that will receive the locally mapped view.
@@ -460,7 +460,7 @@ public:
 	//  localAddress [in] The address of the view on the address space of the current process.
 	static bool UnmapLocalViewOfFile(LPCVOID localAddress);
 
-	//Maps a view of a file-mapping object on the address space of the attached process.
+	//Maps a view of a file-mapping object on the address space of the opened process.
 	//Internally, it's a wrapper around MapViewOfFileNuma2() if available, otherwise
 	//perform a workaround.
 	//Parameters:
@@ -468,11 +468,11 @@ public:
 	//                    AllocateSharedMemory() or CreateSharedMemory().
 	PVOID MapRemoteViewOfFile(const HANDLE hFileMapping) const;
 
-	//Unmaps a view of a file-mapping object on the address space of the attached process.
+	//Unmaps a view of a file-mapping object on the address space of the opened process.
 	//Internally it's a wrapper around UnmapViewOfFile2() if available, otherwise
 	//perform a workaround.
 	//Parameters:
-	//  localAddress [in] The address of the view on the address space of the attached process.
+	//  localAddress [in] The address of the view on the address space of the opened process.
 	bool UnmapRemoteViewOfFile(LPCVOID remoteAddress) const;
 
 	//Returns the PID of the specified process.
@@ -489,7 +489,7 @@ public:
 	static DWORD GetProcessIdByWindow(const TCHAR* const windowName, const TCHAR* const className = nullptr);
 
 	//If moduleName is NULL, GetModuleBase() returns the base of the module created by the file used to create the process specified (.exe file)
-	//Returns a module's base address on the attached process.
+	//Returns a module's base address on the opened process.
 	//Parameters:
 	//  moduleName  [in]  The name of the module.
 	//  pModuleSize [out] An optional pointer that if provided, receives the size of the module.
