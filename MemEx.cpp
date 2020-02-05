@@ -563,8 +563,10 @@ bool MemEx::Unhook(const uintptr_t address)
 	return static_cast<bool>(FlushInstructionCache(m_hProcess, reinterpret_cast<LPCVOID>(address), static_cast<SIZE_T>(m_Hooks[address].numReplacedBytes)));
 }
 
-uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, const ScanBoundaries& scanBoundaries, const DWORD protection) const
+uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, const ScanBoundaries& scanBoundaries, size_t* const codeCaveSize, const DWORD protection) const
 {
+	uintptr_t address = NULL;
+
 	if (nullByte != -1)
 	{
 		auto pattern = std::make_unique<char[]>(size), mask = std::make_unique<char[]>(size + 1);
@@ -572,11 +574,11 @@ uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, const 
 		memset(mask.get(), static_cast<int>('x'), size);
 		mask.get()[size] = '\0';
 
-		return PatternScan(pattern.get(), mask.get(), scanBoundaries, protection);
+		address = PatternScan(pattern.get(), mask.get(), scanBoundaries, protection);
 	}
 	else
 	{
-		std::atomic<uintptr_t> address = 0; std::atomic<size_t> finishCount = 0;
+		std::atomic<uintptr_t> atomicAddress = 0; std::atomic<size_t> finishCount = 0;
 
 		uintptr_t start = 0, end = 0;
 		switch (scanBoundaries.scanBoundaries)
@@ -595,18 +597,19 @@ uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, const 
 			struct CodeCaveInfo
 			{
 				size_t size;
-				uintptr_t address;
-				const MemEx* memex;
+				size_t* const codeCaveSize;
 				DWORD protect;
+				const MemEx* memex;
+				uintptr_t address;
 			};
 
-			CodeCaveInfo cci = { size, 0, this, protection };
+			CodeCaveInfo cci = { size, codeCaveSize, protection, this, 0 };
 
 			EnumModules(GetCurrentProcessId(),
 				[](MODULEENTRY32& me, void* param)
 				{
 					CodeCaveInfo* cci = static_cast<CodeCaveInfo*>(param);
-					return !(cci->address = cci->memex->FindCodeCave(cci->size, -1, ScanBoundaries(SCAN_BOUNDARIES::RANGE, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr + me.modBaseSize)), cci->protect));
+					return !(cci->address = cci->memex->FindCodeCave(cci->size, -1, ScanBoundaries(SCAN_BOUNDARIES::RANGE, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr + me.modBaseSize)), cci->codeCaveSize, cci->protect));
 				}, &cci);
 
 			return cci.address;
@@ -614,8 +617,7 @@ uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, const 
 		default:
 			return 0;
 		}
-
-
+		
 #if SCAN_EX_MULTITHREADING
 		auto numThreads = std::thread::hardware_concurrency();
 		if (!numThreads)
@@ -624,24 +626,48 @@ uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, const 
 		size_t chunkSize = (end - start) / numThreads;
 
 		for (unsigned int i = 0; i < numThreads; i++)
-			std::thread(&MemEx::FindCodeCaveImpl, this, std::ref(address), std::ref(finishCount), size, start + chunkSize * i, start + chunkSize * (static_cast<size_t>(i) + 1), protection).detach();
+			std::thread(&MemEx::FindCodeCaveImpl, this, std::ref(atomicAddress), std::ref(finishCount), size, start + chunkSize * i, start + chunkSize * (static_cast<size_t>(i) + 1), protection).detach();
 
 		while (finishCount.load() != numThreads)
 			Sleep(1);
 
 #else
-		FindCodeCaveImpl(address, finishCount, size, start, end, protection);
+		FindCodeCaveImpl(atomicAddress, finishCount, size, start, end, protection);
 #endif	
 
-		return address.load();
+		address = atomicAddress.load();
 	}
+
+	if (codeCaveSize)
+	{
+		size_t remainingSize = 0; SIZE_T nBytesRead;
+		uint8_t buffer[4096];
+		uint8_t realNullByte = nullByte == -1 ? *reinterpret_cast<uint8_t*>(address) : nullByte;
+		while (ReadProcessMemory(m_hProcess, reinterpret_cast<LPCVOID>(address + size + remainingSize), buffer, 4096, &nBytesRead))
+		{
+			for (int i = 0; i < nBytesRead; i++)
+			{
+				if (buffer[i] == realNullByte)
+					remainingSize++;
+				else
+				{
+					*codeCaveSize = size + remainingSize;
+					return address;
+				}
+			}
+		}
+
+		*codeCaveSize = size + remainingSize;
+	}
+
+	return address;
 }
 
-uintptr_t MemEx::FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte, const ScanBoundaries& scanBoundaries, const DWORD protection) const
+uintptr_t MemEx::FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte, const ScanBoundaries& scanBoundaries, size_t* const codeCaveSize, const DWORD protection) const
 {
 	for (auto nullByte : nullBytes)
 	{
-		auto address = FindCodeCave(size, nullByte, scanBoundaries, protection);
+		auto address = FindCodeCave(size, nullByte, scanBoundaries, codeCaveSize, protection);
 		if (address)
 		{
 			if (pNullByte)

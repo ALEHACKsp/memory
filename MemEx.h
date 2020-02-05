@@ -400,30 +400,36 @@ public:
 	
 	//Scans the address space according to 'scanBoundaries' for a nullByte.
 	//Parameters:
-	//  size           [in] The size of the code cave.
-	//  nullByte       [in] The byte of the code cave. If -1 is specified,
-	//                      the null byte is any byte, that is, FindCodeCave()
-	//                      will return any sequence of the same byte.
-	//  scanBoundaries [in] See defination of the ScanBoundaries class.
-	//  protection     [in] Specifies a mask of memory protection constants
-	//                      which defines what memory regions will be scanned.
-	//                      The default value(-1) specifies that pages with any
-	//                      protection between 'start' and 'end' should be scanned.
-	uintptr_t FindCodeCave(const size_t size, const uint32_t nullByte = 0x00, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
+	//  size           [in]  The size of the code cave.
+	//  nullByte       [in]  The byte of the code cave. If -1 is specified,
+	//                       the null byte is any byte, that is, FindCodeCave()
+	//                       will return any sequence of the same byte.
+	//  scanBoundaries [in]  See defination of the ScanBoundaries class.
+	//  codeCaveSize   [out] If not NULL, the variable pointed by this argument
+	//                       receives the size of the code cave found. If no code
+	//                       cave is found, 0(zero) is set.
+	//  protection     [in]  Specifies a mask of memory protection constants
+	//                       which defines what memory regions will be scanned.
+	//                       The default value(-1) specifies that pages with any
+	//                       protection between 'start' and 'end' should be scanned.
+	uintptr_t FindCodeCave(const size_t size, const uint32_t nullByte = 0x00, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), size_t* const codeCaveSize = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
 
 	//Scans the address space according to 'scanBoundaries' for nullBytes.
 	//Parameters:
-	//  size           [in] The size of the code cave.
-	//  nullBytes      [in] The byte of the code cave.
-	//  pNullByte      [in] If a codecave is found and pNullByte is not NULL,
-	//                      the byte that the codecave contains is written to
-	//                      the variable pointed by pNullByte.
-	//  scanBoundaries [in] See defination of the ScanBoundaries class.
-	//  protection     [in] Specifies a mask of memory protection constants
-	//                      which defines what memory regions will be scanned.
-	//                      The default value(-1) specifies that pages with any
-	//                      protection between 'start' and 'end' should be scanned.
-	uintptr_t FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte = nullptr, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
+	//  size           [in]  The size of the code cave.
+	//  nullBytes      [in]  The byte of the code cave.
+	//  pNullByte      [in]  If a codecave is found and pNullByte is not NULL,
+	//                       the byte that the codecave contains is written to
+	//                       the variable pointed by pNullByte.
+	//  scanBoundaries [in]  See defination of the ScanBoundaries class.
+	//  codeCaveSize   [out] If not NULL, the variable pointed by this argument
+	//                       receives the size of the code cave found. If no code
+	//                       cave is found, 0(zero) is set.
+	//  protection     [in]  Specifies a mask of memory protection constants
+	//                       which defines what memory regions will be scanned.
+	//                       The default value(-1) specifies that pages with any
+	//                       protection between 'start' and 'end' should be scanned.
+	uintptr_t FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte = nullptr, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), size_t* const codeCaveSize = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
 
 	//Creates and returns a handle to an unnamed file-mapping object backed by the system's 
 	//paging system. It basically represents a page which can be shared with other processes.
