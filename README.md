@@ -22,9 +22,9 @@ There is an internal (MemIn.h", "MemIn.cpp") and an external ("MemEx.h", "MemEx.
  - GetProcessIdByName(), GetProcessIdByWindow()
  - GetModuleBase()
  - EnumModules()
- - Attach(), AttachByWindow() **[EX]**
- - WaitAttach(), WaitAttachByWindow() **[EX]**
- - Detach(), IsAttached() **[EX]**
+ - Open(), OpenByWindow() **[EX]**
+ - WaitOpen(), WaitOpenByWindow() **[EX]**
+ - Close(), IsOpened() **[EX]**
  - GetProcess(), GetPid() **[EX]**
  - AllocateSharedMemory(), CreateSharedMemory() **[EX]**
  - MapLocalViewOfFile(), UnmapLocalViewOfFile() **[EX]**
@@ -37,7 +37,7 @@ There is an internal (MemIn.h", "MemIn.cpp") and an external ("MemEx.h", "MemEx.
 int main()
 {
   MemEx m;
-  m.WaitAttach("target.exe");
+  m.WaitOpen("target.exe");
   
   uintptr_t address = m.AOBScan("64 A1 ?? ?? ?? ?? BA 08 28 7A 77 8B 48 ??", ScanBoundaries(SCAN_BOUNDARIES::MODULE, "some_module.dll"));
   m.Patch(address, "\x8B\x15", 2);
