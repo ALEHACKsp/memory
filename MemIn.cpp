@@ -202,9 +202,9 @@ bool MemIn::HashMD5(const uintptr_t address, const size_t size, uint8_t* const o
 	return true;
 }
 
-uintptr_t MemIn::PatternScan(const char* const pattern, const char* const mask, const ScanBoundaries& scanBoundaries, const DWORD protect, const size_t numThreads)
+uintptr_t MemIn::PatternScan(const char* const pattern, const char* const mask, const ScanBoundaries& scanBoundaries, const DWORD protect, const size_t numThreads, const bool firstMatch)
 {
-	std::atomic<uintptr_t> address = 0; std::atomic<size_t> finishCount = 0;
+	std::atomic<uintptr_t> address = -1; std::atomic<size_t> finishCount = 0;
 
 	uintptr_t start = 0, end = 0;
 	switch (scanBoundaries.scanBoundaries)
@@ -225,16 +225,17 @@ uintptr_t MemIn::PatternScan(const char* const pattern, const char* const mask, 
 			const char* const pattern, * const mask;
 			DWORD protect;
 			size_t numThreads;
+			bool firstMatch;
 			uintptr_t address;
 		};
 
-		PatternInfo pi = { pattern, mask, protect, numThreads, 0 };
+		PatternInfo pi = { pattern, mask, protect, numThreads, firstMatch, 0 };
 
 		EnumModules(GetCurrentProcessId(),
 			[](MODULEENTRY32& me, void* param)
 			{
 				PatternInfo* pi = static_cast<PatternInfo*>(param);
-				return !(pi->address = MemIn::PatternScan(pi->pattern, pi->mask, ScanBoundaries(SCAN_BOUNDARIES::RANGE, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr + me.modBaseSize)), pi->protect, pi->numThreads));
+				return !(pi->address = MemIn::PatternScan(pi->pattern, pi->mask, ScanBoundaries(SCAN_BOUNDARIES::RANGE, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr + me.modBaseSize)), pi->protect, pi->numThreads, pi->firstMatch));
 			}, &pi);
 
 		return pi.address;
@@ -247,20 +248,20 @@ uintptr_t MemIn::PatternScan(const char* const pattern, const char* const mask, 
 	std::vector<std::thread> threads;
 
 	for (size_t i = 0; i < numThreads; i++)
-		threads.emplace_back(std::thread(&MemIn::PatternScanImpl, std::ref(address), std::ref(finishCount), reinterpret_cast<const uint8_t* const>(pattern), mask, start + chunkSize * i, start + chunkSize * (static_cast<size_t>(i) + 1), protect));
+		threads.emplace_back(std::thread(&MemIn::PatternScanImpl, std::ref(address), std::ref(finishCount), reinterpret_cast<const uint8_t* const>(pattern), mask, start + chunkSize * i, start + chunkSize * (static_cast<size_t>(i) + 1), protect, firstMatch));
 
 	for (auto& thread : threads)
 		thread.join();
 
-	return address.load();
+	return (address.load() != -1) ? address.load() : 0;
 }
 
-uintptr_t MemIn::AOBScan(const char* const AOB, const ScanBoundaries& scanBoundaries, const DWORD protect, const size_t numThreads)
+uintptr_t MemIn::AOBScan(const char* const AOB, const ScanBoundaries& scanBoundaries, const DWORD protect, const size_t numThreads, const bool firstMatch)
 {
 	std::string pattern, mask;
 	AOBToPattern(AOB, pattern, mask);
 
-	return PatternScan(pattern.c_str(), mask.c_str(), scanBoundaries, protect, numThreads);
+	return PatternScan(pattern.c_str(), mask.c_str(), scanBoundaries, protect, numThreads, firstMatch);
 }
 
 //Based on https://guidedhacking.com/threads/finddmaaddy-c-multilevel-pointer-function.6292/
@@ -480,7 +481,7 @@ bool MemIn::Unhook(const uintptr_t address)
 	return static_cast<bool>(FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<LPCVOID>(address), static_cast<SIZE_T>(m_Hooks[address].numReplacedBytes)));
 }
 
-uintptr_t MemIn::FindCodeCave(const size_t size, const uint32_t nullByte, const ScanBoundaries& scanBoundaries, size_t* const codeCaveSize, const DWORD protection, const size_t numThreads)
+uintptr_t MemIn::FindCodeCave(const size_t size, const uint32_t nullByte, const ScanBoundaries& scanBoundaries, size_t* const codeCaveSize, const DWORD protection, const size_t numThreads, const bool firstMatch)
 {
 	uintptr_t address = NULL;
 
@@ -491,11 +492,11 @@ uintptr_t MemIn::FindCodeCave(const size_t size, const uint32_t nullByte, const 
 		memset(mask.get(), static_cast<int>('x'), size);
 		mask.get()[size] = '\0';
 
-		address = PatternScan(pattern.get(), mask.get(), scanBoundaries, protection, numThreads);
+		address = PatternScan(pattern.get(), mask.get(), scanBoundaries, protection, numThreads, firstMatch);
 	}
 	else
 	{
-		std::atomic<uintptr_t> atomicAddress = 0; std::atomic<size_t> finishCount = 0;
+		std::atomic<uintptr_t> atomicAddress = -1; std::atomic<size_t> finishCount = 0;
 
 		uintptr_t start = 0, end = 0;
 		switch (scanBoundaries.scanBoundaries)
@@ -517,16 +518,17 @@ uintptr_t MemIn::FindCodeCave(const size_t size, const uint32_t nullByte, const 
 				size_t* const codeCaveSize;
 				DWORD protect;
 				size_t numThreads;
+				bool firstMatch;
 				uintptr_t address;
 			};
 
-			CodeCaveInfo cci = { size, codeCaveSize, protection, numThreads, 0 };
+			CodeCaveInfo cci = { size, codeCaveSize, protection, numThreads, firstMatch, 0 };
 
 			EnumModules(GetCurrentProcessId(),
 				[](MODULEENTRY32& me, void* param)
 				{
 					CodeCaveInfo* cci = static_cast<CodeCaveInfo*>(param);
-					return !(cci->address = MemIn::FindCodeCave(cci->size, -1, ScanBoundaries(SCAN_BOUNDARIES::RANGE, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr + me.modBaseSize)), cci->codeCaveSize, cci->protect, cci->numThreads));
+					return !(cci->address = MemIn::FindCodeCave(cci->size, -1, ScanBoundaries(SCAN_BOUNDARIES::RANGE, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr + me.modBaseSize)), cci->codeCaveSize, cci->protect, cci->numThreads, cci->firstMatch));
 				}, &cci);
 
 			return cci.address;
@@ -539,12 +541,12 @@ uintptr_t MemIn::FindCodeCave(const size_t size, const uint32_t nullByte, const 
 		std::vector<std::thread> threads;
 
 		for (size_t i = 0; i < numThreads; i++)
-			threads.emplace_back(std::thread(&MemIn::FindCodeCaveImpl, std::ref(atomicAddress), std::ref(finishCount), size, start + chunkSize * i, start + chunkSize * (static_cast<size_t>(i) + 1), protection));
+			threads.emplace_back(std::thread(&MemIn::FindCodeCaveImpl, std::ref(atomicAddress), std::ref(finishCount), size, start + chunkSize * i, start + chunkSize * (static_cast<size_t>(i) + 1), protection, firstMatch));
 
 		for (auto& thread : threads)
 			thread.join();
 
-		address = atomicAddress.load();
+		address = (atomicAddress.load() != -1) ? atomicAddress.load() : 0;
 	}
 
 	if (codeCaveSize)
@@ -572,11 +574,11 @@ uintptr_t MemIn::FindCodeCave(const size_t size, const uint32_t nullByte, const 
 	return address;
 }
 
-uintptr_t MemIn::FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte, const ScanBoundaries& scanBoundaries, size_t* const codeCaveSize, const DWORD protection, const size_t numThreads)
+uintptr_t MemIn::FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte, const ScanBoundaries& scanBoundaries, size_t* const codeCaveSize, const DWORD protection, const size_t numThreads, const bool firstMatch)
 {
 	for (auto nullByte : nullBytes)
 	{
-		auto address = FindCodeCave(size, nullByte, scanBoundaries, codeCaveSize, protection, numThreads);
+		auto address = FindCodeCave(size, nullByte, scanBoundaries, codeCaveSize, protection, numThreads, firstMatch);
 		if (address)
 		{
 			if (pNullByte)
@@ -746,12 +748,12 @@ void MemIn::AOBToPattern(const char* const AOB, std::string& pattern, std::strin
 }
 
 //Inspired by https://github.com/cheat-engine/cheat-engine/blob/ac072b6fae1e0541d9e54e2b86452507dde4689a/Cheat%20Engine/ceserver/native-api.c
-void MemIn::PatternScanImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>& finishCount, const uint8_t* const pattern, const char* const mask, uintptr_t start, const uintptr_t end, const DWORD protect)
+void MemIn::PatternScanImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>& finishCount, const uint8_t* const pattern, const char* const mask, uintptr_t start, const uintptr_t end, const DWORD protect, const bool firstMatch)
 {
 	MEMORY_BASIC_INFORMATION mbi;
 	const size_t patternSize = strlen(mask);
 
-	while (!address.load() && start < end && VirtualQuery(reinterpret_cast<LPCVOID>(start), &mbi, sizeof(MEMORY_BASIC_INFORMATION)))
+	while ((firstMatch ? true : address.load() == -1) && start < end && VirtualQuery(reinterpret_cast<LPCVOID>(start), &mbi, sizeof(MEMORY_BASIC_INFORMATION)))
 	{
 		if (!(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) && (mbi.Protect & protect))
 		{
@@ -768,7 +770,9 @@ void MemIn::PatternScanImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>
 
 					if (start + i != reinterpret_cast<uintptr_t>(pattern))
 					{
-						address = start + i; //Found match
+						uintptr_t addressMatch = start + i; //Found match
+						if (addressMatch < address.load())
+							address = addressMatch;
 						finishCount++; //Increase finish count
 						return;
 					}
@@ -784,12 +788,12 @@ void MemIn::PatternScanImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>
 	finishCount++;
 }
 
-void MemIn::FindCodeCaveImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>& finishCount, const size_t size, uintptr_t start, const uintptr_t end, const DWORD protect)
+void MemIn::FindCodeCaveImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>& finishCount, const size_t size, uintptr_t start, const uintptr_t end, const DWORD protect, const bool firstMatch)
 {
 	MEMORY_BASIC_INFORMATION mbi;
 	size_t count = 0;
 
-	while (!address.load() && start < end && VirtualQuery(reinterpret_cast<LPCVOID>(start), &mbi, sizeof(MEMORY_BASIC_INFORMATION)))
+	while ((firstMatch ? true : address.load() == -1) && start < end && VirtualQuery(reinterpret_cast<LPCVOID>(start), &mbi, sizeof(MEMORY_BASIC_INFORMATION)))
 	{
 		if (!(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) && (mbi.Protect & protect))
 		{
@@ -801,7 +805,9 @@ void MemIn::FindCodeCaveImpl(std::atomic<uintptr_t>& address, std::atomic<size_t
 				{
 					if (++count == size)
 					{
-						address = start - count + 1; //Found match
+						uintptr_t addressMatch = start - count + 1; //Found match
+						if (addressMatch < address.load())
+							address = addressMatch;
 						finishCount++; //Increase finish count
 						return;
 					}

@@ -260,9 +260,9 @@ bool MemEx::HashMD5(const uintptr_t address, const size_t size, uint8_t* const o
 	return true;
 }
 
-uintptr_t MemEx::PatternScan(const char* const pattern, const char* const mask, const ScanBoundaries& scanBoundaries, const DWORD protect, const size_t numThreads) const
+uintptr_t MemEx::PatternScan(const char* const pattern, const char* const mask, const ScanBoundaries& scanBoundaries, const DWORD protect, const size_t numThreads, const bool firstMatch) const
 {
-	std::atomic<uintptr_t> address = 0; std::atomic<size_t> finishCount = 0;
+	std::atomic<uintptr_t> address = -1; std::atomic<size_t> finishCount = 0;
 
 	uintptr_t start = 0, end = 0;
 	switch (scanBoundaries.scanBoundaries)
@@ -282,17 +282,19 @@ uintptr_t MemEx::PatternScan(const char* const pattern, const char* const mask, 
 		{
 			const char* const pattern, * const mask;
 			const MemEx* mem;
-			uintptr_t address;
 			DWORD protect;
+			size_t numThreads;
+			bool firstMatch;
+			uintptr_t address;
 		};
 
-		PatternInfo pi = { pattern, mask, this, 0, protect };
+		PatternInfo pi = { pattern, mask, this, protect, numThreads, firstMatch, 0};
 
 		EnumModules(m_dwProcessId,
 			[](MODULEENTRY32& me, void* param)
 			{
 				PatternInfo* pi = static_cast<PatternInfo*>(param);
-				return !(pi->address = pi->mem->PatternScan(pi->pattern, pi->mask, ScanBoundaries(SCAN_BOUNDARIES::RANGE, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr + me.modBaseSize)), pi->protect));
+				return !(pi->address = pi->mem->PatternScan(pi->pattern, pi->mask, ScanBoundaries(SCAN_BOUNDARIES::RANGE, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr + me.modBaseSize)), pi->protect, pi->numThreads, pi->firstMatch));
 			}, &pi);
 
 		return pi.address;
@@ -304,20 +306,20 @@ uintptr_t MemEx::PatternScan(const char* const pattern, const char* const mask, 
 	size_t chunkSize = (end - start) / numThreads;
 	std::vector<std::thread> threads;
 	for (size_t i = 0; i < numThreads; i++)
-		threads.emplace_back(std::thread(&MemEx::PatternScanImpl, this, std::ref(address), std::ref(finishCount), reinterpret_cast<const uint8_t* const>(pattern), mask, start + chunkSize * i, start + chunkSize * (i + 1), protect));
+		threads.emplace_back(std::thread(&MemEx::PatternScanImpl, this, std::ref(address), std::ref(finishCount), reinterpret_cast<const uint8_t* const>(pattern), mask, start + chunkSize * i, start + chunkSize * (i + 1), protect, firstMatch));
 	
 	for (auto& thread : threads)
 		thread.join();
 
-	return address.load();
+	return (address.load() != -1) ? address.load() : 0;
 }
 
-uintptr_t MemEx::AOBScan(const char* const AOB, const ScanBoundaries& scanBoundaries, const DWORD protect, const size_t numThreads) const
+uintptr_t MemEx::AOBScan(const char* const AOB, const ScanBoundaries& scanBoundaries, const DWORD protect, const size_t numThreads, const bool firstMatch) const
 {
 	std::string pattern, mask;
 	AOBToPattern(AOB, pattern, mask);
 
-	return PatternScan(pattern.c_str(), mask.c_str(), scanBoundaries, protect, numThreads);
+	return PatternScan(pattern.c_str(), mask.c_str(), scanBoundaries, protect, numThreads, firstMatch);
 }
 
 //Based on https://guidedhacking.com/threads/finddmaaddy-c-multilevel-pointer-function.6292/
@@ -554,7 +556,7 @@ bool MemEx::Unhook(const uintptr_t address)
 	return static_cast<bool>(FlushInstructionCache(m_hProcess, reinterpret_cast<LPCVOID>(address), static_cast<SIZE_T>(m_Hooks[address].numReplacedBytes)));
 }
 
-uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, const ScanBoundaries& scanBoundaries, size_t* const codeCaveSize, const DWORD protection, const size_t numThreads) const
+uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, const ScanBoundaries& scanBoundaries, size_t* const codeCaveSize, const DWORD protection, const size_t numThreads, const bool firstMatch) const
 {
 	uintptr_t address = NULL;
 
@@ -565,11 +567,11 @@ uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, const 
 		memset(mask.get(), static_cast<int>('x'), size);
 		mask.get()[size] = '\0';
 
-		address = PatternScan(pattern.get(), mask.get(), scanBoundaries, protection, numThreads);
+		address = PatternScan(pattern.get(), mask.get(), scanBoundaries, protection, numThreads, firstMatch);
 	}
 	else
 	{
-		std::atomic<uintptr_t> atomicAddress = 0; std::atomic<size_t> finishCount = 0;
+		std::atomic<uintptr_t> atomicAddress = -1; std::atomic<size_t> finishCount = 0;
 
 		uintptr_t start = 0, end = 0;
 		switch (scanBoundaries.scanBoundaries)
@@ -589,19 +591,20 @@ uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, const 
 			{
 				size_t size;
 				size_t* const codeCaveSize;
+				const MemEx* memex;
 				DWORD protect;
 				size_t numThreads;
-				const MemEx* memex;
+				bool firstMatch;
 				uintptr_t address;
 			};
 
-			CodeCaveInfo cci = { size, codeCaveSize, protection, numThreads, this, 0 };
+			CodeCaveInfo cci = { size, codeCaveSize, this, protection, numThreads, firstMatch, 0 };
 
 			EnumModules(GetCurrentProcessId(),
 				[](MODULEENTRY32& me, void* param)
 				{
 					CodeCaveInfo* cci = static_cast<CodeCaveInfo*>(param);
-					return !(cci->address = cci->memex->FindCodeCave(cci->size, -1, ScanBoundaries(SCAN_BOUNDARIES::RANGE, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr + me.modBaseSize)), cci->codeCaveSize, cci->protect, cci->numThreads));
+					return !(cci->address = cci->memex->FindCodeCave(cci->size, -1, ScanBoundaries(SCAN_BOUNDARIES::RANGE, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr + me.modBaseSize)), cci->codeCaveSize, cci->protect, cci->numThreads, cci->firstMatch));
 				}, &cci);
 
 			return cci.address;
@@ -614,12 +617,12 @@ uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, const 
 		std::vector<std::thread> threads;
 
 		for (size_t i = 0; i < numThreads; i++)
-			threads.emplace_back(std::thread(&MemEx::FindCodeCaveImpl, this, std::ref(atomicAddress), std::ref(finishCount), size, start + chunkSize * i, start + chunkSize * (static_cast<size_t>(i) + 1), protection));
+			threads.emplace_back(std::thread(&MemEx::FindCodeCaveImpl, this, std::ref(atomicAddress), std::ref(finishCount), size, start + chunkSize * i, start + chunkSize * (static_cast<size_t>(i) + 1), protection, firstMatch));
 
 		for (auto& thread : threads)
 			thread.join();
 
-		address = atomicAddress.load();
+		address = (atomicAddress.load() != -1) ? atomicAddress.load() : 0;
 	}
 
 	if (codeCaveSize)
@@ -647,11 +650,11 @@ uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, const 
 	return address;
 }
 
-uintptr_t MemEx::FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte, const ScanBoundaries& scanBoundaries, size_t* const codeCaveSize, const DWORD protection, const size_t numThreads) const
+uintptr_t MemEx::FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte, const ScanBoundaries& scanBoundaries, size_t* const codeCaveSize, const DWORD protection, const size_t numThreads, const bool firstMatch) const
 {
 	for (auto nullByte : nullBytes)
 	{
-		auto address = FindCodeCave(size, nullByte, scanBoundaries, codeCaveSize, protection, numThreads);
+		auto address = FindCodeCave(size, nullByte, scanBoundaries, codeCaveSize, protection, numThreads, firstMatch);
 		if (address)
 		{
 			if (pNullByte)
@@ -974,13 +977,13 @@ bool MemEx::Inject(const TCHAR* const dllPath)
 }
 
 //Inspired by https://github.com/cheat-engine/cheat-engine/blob/ac072b6fae1e0541d9e54e2b86452507dde4689a/Cheat%20Engine/ceserver/native-api.c
-void MemEx::PatternScanImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>& finishCount, const uint8_t* const pattern, const char* const mask, uintptr_t start, const uintptr_t end, const DWORD protect) const
+void MemEx::PatternScanImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>& finishCount, const uint8_t* const pattern, const char* const mask, uintptr_t start, const uintptr_t end, const DWORD protect, const bool firstMatch) const
 {
 	MEMORY_BASIC_INFORMATION mbi;
 	uint8_t buffer[4096];
 	const size_t patternSize = strlen(mask);
 
-	while (!address.load() && start < end && VirtualQueryEx(m_hProcess, reinterpret_cast<LPCVOID>(start), &mbi, sizeof(MEMORY_BASIC_INFORMATION)))
+	while ((firstMatch ? true : address.load() == -1) && start < end && VirtualQueryEx(m_hProcess, reinterpret_cast<LPCVOID>(start), &mbi, sizeof(MEMORY_BASIC_INFORMATION)))
 	{
 		if (mbi.Protect & protect)
 		{
@@ -999,9 +1002,13 @@ void MemEx::PatternScanImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>
 							goto byte_not_match;
 					}
 
-					address = start + i; //Found match
-					finishCount++; //Increase finish count
-					return;
+					{
+						uintptr_t addressMatch = start + i; //Found match
+						if (addressMatch < address.load())
+							address = addressMatch;
+						finishCount++; //Increase finish count
+						return;
+					}
 				byte_not_match:
 					bytes++;
 				}
@@ -1014,13 +1021,13 @@ void MemEx::PatternScanImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>
 	finishCount++;
 }
 
-void MemEx::FindCodeCaveImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>& finishCount, const size_t size, uintptr_t start, const uintptr_t end, const DWORD protect) const
+void MemEx::FindCodeCaveImpl(std::atomic<uintptr_t>& address, std::atomic<size_t>& finishCount, const size_t size, uintptr_t start, const uintptr_t end, const DWORD protect, const bool firstMatch) const
 {
 	MEMORY_BASIC_INFORMATION mbi;
 	uint8_t buffer[4096];
 	size_t count = 0;
 
-	while (!address.load() && start < end && VirtualQueryEx(m_hProcess, reinterpret_cast<LPCVOID>(start), &mbi, sizeof(MEMORY_BASIC_INFORMATION)))
+	while ((firstMatch ? true : address.load() == -1) && start < end && VirtualQueryEx(m_hProcess, reinterpret_cast<LPCVOID>(start), &mbi, sizeof(MEMORY_BASIC_INFORMATION)))
 	{
 		if (mbi.Protect & protect)
 		{
@@ -1037,7 +1044,9 @@ void MemEx::FindCodeCaveImpl(std::atomic<uintptr_t>& address, std::atomic<size_t
 					{
 						if (++count == size)
 						{
-							address = start + (b - buffer) - count; //Found match
+							uintptr_t addressMatch = start + (b - buffer) - count; //Found match
+							if (addressMatch < address.load())
+								address = addressMatch;
 							finishCount++; //Increase finish count
 							return;
 						}

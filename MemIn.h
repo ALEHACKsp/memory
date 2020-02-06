@@ -172,7 +172,10 @@ public:
 	//                      protection between 'start' and 'end' should be scanned.
 	//  numThreads     [in] The number of threads to be used. Thr default argument
 	//                      uses the number of CPU cores as the number of threads.
-	static uintptr_t PatternScan(const char* const pattern, const char* const mask, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), const DWORD protect = -1, const size_t numThreads = static_cast<size_t>(std::thread::hardware_concurrency()));
+	//  firstMatch     [in] If true, the address returned(if any) is guaranteed to
+	//                      be the first match(i.e. the lowest address on the virtual
+	//                      address space that is a match) according to scanBoundaries.
+	static uintptr_t PatternScan(const char* const pattern, const char* const mask, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), const DWORD protect = -1, const size_t numThreads = static_cast<size_t>(std::thread::hardware_concurrency()), const bool firstMatch = false);
 	
 	//Scans the address space according to 'scanBoundaries' for an AOB.
 	//Parameters:
@@ -186,7 +189,10 @@ public:
 	//                      protection between 'start' and 'end' should be scanned.
 	//  numThreads     [in] The number of threads to be used. Thr default argument
 	//                      uses the number of CPU cores as the number of threads.
-	static uintptr_t AOBScan(const char* const AOB, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), const DWORD protect = -1, const size_t numThreads = static_cast<size_t>(std::thread::hardware_concurrency()));
+	//  firstMatch     [in] If true, the address returned(if any) is guaranteed to
+	//                      be the first match(i.e. the lowest address on the virtual
+	//                      address space that is a match) according to scanBoundaries.
+	static uintptr_t AOBScan(const char* const AOB, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), const DWORD protect = -1, const size_t numThreads = static_cast<size_t>(std::thread::hardware_concurrency()), const bool firstMatch = false);
 
 	//Reads a multilevel pointer.
 	//Parameters:
@@ -230,7 +236,10 @@ public:
 	//                       protection between 'start' and 'end' should be scanned.
 	//  numThreads     [in]  The number of threads to be used. Thr default argument
 	//                       uses the number of CPU cores as the number of threads.
-	static uintptr_t FindCodeCave(const size_t size, const uint32_t nullByte = 0x00, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), size_t* const codeCaveSize = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY, const size_t numThreads = static_cast<size_t>(std::thread::hardware_concurrency()));
+	//  firstMatch     [in]  If true, the address returned(if any) is guaranteed to
+	//                       be the first match(i.e. the lowest address on the virtual
+	//                       address space that is a match) according to scanBoundaries.
+	static uintptr_t FindCodeCave(const size_t size, const uint32_t nullByte = 0x00, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), size_t* const codeCaveSize = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY, const size_t numThreads = static_cast<size_t>(std::thread::hardware_concurrency()), const bool firstMatch = false);
 
 	//Scans the address space according to 'scanBoundaries' for nullBytes.
 	//Parameters:
@@ -249,7 +258,10 @@ public:
 	//                       protection between 'start' and 'end' should be scanned.
 	//  numThreads     [in]  The number of threads to be used. Thr default argument
 	//                       uses the number of CPU cores as the number of threads.
-	static uintptr_t FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte = nullptr, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), size_t* const codeCaveSize = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY, const size_t numThreads = static_cast<size_t>(std::thread::hardware_concurrency()));
+	//  firstMatch     [in]  If true, the address returned(if any) is guaranteed to
+	//                       be the first match(i.e. the lowest address on the virtual
+	//                       address space that is a match) according to scanBoundaries.
+	static uintptr_t FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte = nullptr, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), size_t* const codeCaveSize = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY, const size_t numThreads = static_cast<size_t>(std::thread::hardware_concurrency()), const bool firstMatch = false);
 
 	//Returns the PID of the specified process.
 	//Parameters:
@@ -290,9 +302,9 @@ public:
 	//  mask    [out] The string that will receive th mask.
 	static void AOBToPattern(const char* const AOB, std::string& pattern, std::string& mask);
 private:
-	static void PatternScanImpl(std::atomic<uintptr_t>& returnValue, std::atomic<size_t>& finishCount, const uint8_t* const pattern, const char* const mask, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1);
+	static void PatternScanImpl(std::atomic<uintptr_t>& returnValue, std::atomic<size_t>& finishCount, const uint8_t* const pattern, const char* const mask, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1, const bool firstMatch = false);
 
-	static void FindCodeCaveImpl(std::atomic<uintptr_t>& returnValue, std::atomic<size_t>& finishCount, const size_t size, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1);
+	static void FindCodeCaveImpl(std::atomic<uintptr_t>& returnValue, std::atomic<size_t>& finishCount, const size_t size, uintptr_t start = 0, const uintptr_t end = -1, const DWORD protect = -1, const bool firstMatch = false);
 
 };
 
