@@ -12,8 +12,7 @@
 #include <string>
 #include <TlHelp32.h>
 #include <memory>
-
-#define SCAN_EX_MULTITHREADING 1
+#include <thread>
 
 #define HOOK_MARK_END __asm _emit 0xD6 __asm _emit 0xD6 __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0x0F __asm _emit 0xD6 __asm _emit 0xD6
 
@@ -276,19 +275,23 @@ public:
 	//                      which defines what memory regions will be scanned.
 	//                      The default value(-1) specifies that pages with any
 	//                      protection between 'start' and 'end' should be scanned.
-	uintptr_t PatternScan(const char* const pattern, const char* const mask, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), const DWORD protect = -1) const;
+	//  numThreads     [in] The number of threads to be used. Thr default argument
+	//                      uses the number of CPU cores as the number of threads.
+	uintptr_t PatternScan(const char* const pattern, const char* const mask, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), const DWORD protect = -1, const size_t numThreads = static_cast<size_t>(std::thread::hardware_concurrency())) const;
 	
 	//Scans the address space according to 'scanBoundaries' for an AOB.
 	//Parameters:
-	//  AOB     [in] The array of bytes(AOB) in string form. To specify
-	//               a byte that should be ignore use the '?' character.
-	//               An example of AOB is "68 AB ?? ?? ?? ?? 4F 90 00 08".
+	//  AOB            [in] The array of bytes(AOB) in string form. To specify
+	//                      a byte that should be ignore use the '?' character.
+	//                      An example of AOB is "68 AB ?? ?? ?? ?? 4F 90 00 08".
 	//  scanBoundaries [in] See defination of the SCAN_OUNDARIES enum.
-	//  protect [in] Specifies a mask of memory protection constants
-	//               which defines what memory regions will be scanned.
-	//               The default value(-1) specifies that pages with any
-	//               protection between 'start' and 'end' should be scanned.
-	uintptr_t AOBScan(const char* const AOB, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), const DWORD protect = -1) const;
+	//  protect        [in] Specifies a mask of memory protection constants
+	//                      which defines what memory regions will be scanned.
+	//                      The default value(-1) specifies that pages with any
+	//                      protection between 'start' and 'end' should be scanned.
+	//  numThreads     [in] The number of threads to be used. Thr default argument
+	//                      uses the number of CPU cores as the number of threads.
+	uintptr_t AOBScan(const char* const AOB, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), const DWORD protect = -1, const size_t numThreads = static_cast<size_t>(std::thread::hardware_concurrency())) const;
 
 	//Reads a multilevel pointer.
 	//Parameters:
@@ -412,7 +415,9 @@ public:
 	//                       which defines what memory regions will be scanned.
 	//                       The default value(-1) specifies that pages with any
 	//                       protection between 'start' and 'end' should be scanned.
-	uintptr_t FindCodeCave(const size_t size, const uint32_t nullByte = 0x00, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), size_t* const codeCaveSize = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
+	//  numThreads     [in]  The number of threads to be used. Thr default argument
+	//                       uses the number of CPU cores as the number of threads.
+	uintptr_t FindCodeCave(const size_t size, const uint32_t nullByte = 0x00, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), size_t* const codeCaveSize = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY, const size_t numThreads = static_cast<size_t>(std::thread::hardware_concurrency())) const;
 
 	//Scans the address space according to 'scanBoundaries' for nullBytes.
 	//Parameters:
@@ -429,7 +434,9 @@ public:
 	//                       which defines what memory regions will be scanned.
 	//                       The default value(-1) specifies that pages with any
 	//                       protection between 'start' and 'end' should be scanned.
-	uintptr_t FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte = nullptr, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), size_t* const codeCaveSize = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY) const;
+	//  numThreads     [in]  The number of threads to be used. Thr default argument
+	//                       uses the number of CPU cores as the number of threads.
+	uintptr_t FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte = nullptr, const ScanBoundaries& scanBoundaries = ScanBoundaries(SCAN_BOUNDARIES::RANGE, 0, -1), size_t* const codeCaveSize = nullptr, const DWORD protection = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY, const size_t numThreads = static_cast<size_t>(std::thread::hardware_concurrency())) const;
 
 	//Creates and returns a handle to an unnamed file-mapping object backed by the system's 
 	//paging system. It basically represents a page which can be shared with other processes.

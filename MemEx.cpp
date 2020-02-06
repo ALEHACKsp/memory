@@ -1,6 +1,6 @@
 #include "MemEx.h"
 #include <algorithm>
-#include <thread>
+
 #include <cstdint>
 
 #ifdef UNICODE
@@ -260,7 +260,7 @@ bool MemEx::HashMD5(const uintptr_t address, const size_t size, uint8_t* const o
 	return true;
 }
 
-uintptr_t MemEx::PatternScan(const char* const pattern, const char* const mask, const ScanBoundaries& scanBoundaries, const DWORD protect) const
+uintptr_t MemEx::PatternScan(const char* const pattern, const char* const mask, const ScanBoundaries& scanBoundaries, const DWORD protect, const size_t numThreads) const
 {
 	std::atomic<uintptr_t> address = 0; std::atomic<size_t> finishCount = 0;
 
@@ -300,33 +300,24 @@ uintptr_t MemEx::PatternScan(const char* const pattern, const char* const mask, 
 	default:
 		return 0;
 	}
-
-#if SCAN_EX_MULTITHREADING
-	auto numThreads = std::thread::hardware_concurrency();
-	if (!numThreads)
-		numThreads = 1;
-
-	size_t chunkSize = (end - start) / numThreads;
 	
+	size_t chunkSize = (end - start) / numThreads;
+	std::vector<std::thread> threads;
 	for (size_t i = 0; i < numThreads; i++)
-		std::thread(&MemEx::PatternScanImpl, this, std::ref(address), std::ref(finishCount), reinterpret_cast<const uint8_t* const>(pattern), mask, start + chunkSize * i, start + chunkSize * (i + 1), protect).detach();
-
-	while (finishCount.load() != numThreads)
-		Sleep(1);
-
-#else
-	PatternScanImpl(address, finishCount, reinterpret_cast<const uint8_t* const>(pattern), mask, start, end, protect);
-#endif	
+		threads.emplace_back(std::thread(&MemEx::PatternScanImpl, this, std::ref(address), std::ref(finishCount), reinterpret_cast<const uint8_t* const>(pattern), mask, start + chunkSize * i, start + chunkSize * (i + 1), protect));
+	
+	for (auto& thread : threads)
+		thread.join();
 
 	return address.load();
 }
 
-uintptr_t MemEx::AOBScan(const char* const AOB, const ScanBoundaries& scanBoundaries, const DWORD protect) const
+uintptr_t MemEx::AOBScan(const char* const AOB, const ScanBoundaries& scanBoundaries, const DWORD protect, const size_t numThreads) const
 {
 	std::string pattern, mask;
 	AOBToPattern(AOB, pattern, mask);
 
-	return PatternScan(pattern.c_str(), mask.c_str(), scanBoundaries, protect);
+	return PatternScan(pattern.c_str(), mask.c_str(), scanBoundaries, protect, numThreads);
 }
 
 //Based on https://guidedhacking.com/threads/finddmaaddy-c-multilevel-pointer-function.6292/
@@ -563,7 +554,7 @@ bool MemEx::Unhook(const uintptr_t address)
 	return static_cast<bool>(FlushInstructionCache(m_hProcess, reinterpret_cast<LPCVOID>(address), static_cast<SIZE_T>(m_Hooks[address].numReplacedBytes)));
 }
 
-uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, const ScanBoundaries& scanBoundaries, size_t* const codeCaveSize, const DWORD protection) const
+uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, const ScanBoundaries& scanBoundaries, size_t* const codeCaveSize, const DWORD protection, const size_t numThreads) const
 {
 	uintptr_t address = NULL;
 
@@ -574,7 +565,7 @@ uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, const 
 		memset(mask.get(), static_cast<int>('x'), size);
 		mask.get()[size] = '\0';
 
-		address = PatternScan(pattern.get(), mask.get(), scanBoundaries, protection);
+		address = PatternScan(pattern.get(), mask.get(), scanBoundaries, protection, numThreads);
 	}
 	else
 	{
@@ -599,17 +590,18 @@ uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, const 
 				size_t size;
 				size_t* const codeCaveSize;
 				DWORD protect;
+				size_t numThreads;
 				const MemEx* memex;
 				uintptr_t address;
 			};
 
-			CodeCaveInfo cci = { size, codeCaveSize, protection, this, 0 };
+			CodeCaveInfo cci = { size, codeCaveSize, protection, numThreads, this, 0 };
 
 			EnumModules(GetCurrentProcessId(),
 				[](MODULEENTRY32& me, void* param)
 				{
 					CodeCaveInfo* cci = static_cast<CodeCaveInfo*>(param);
-					return !(cci->address = cci->memex->FindCodeCave(cci->size, -1, ScanBoundaries(SCAN_BOUNDARIES::RANGE, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr + me.modBaseSize)), cci->codeCaveSize, cci->protect));
+					return !(cci->address = cci->memex->FindCodeCave(cci->size, -1, ScanBoundaries(SCAN_BOUNDARIES::RANGE, reinterpret_cast<uintptr_t>(me.modBaseAddr), reinterpret_cast<uintptr_t>(me.modBaseAddr + me.modBaseSize)), cci->codeCaveSize, cci->protect, cci->numThreads));
 				}, &cci);
 
 			return cci.address;
@@ -618,22 +610,14 @@ uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, const 
 			return 0;
 		}
 		
-#if SCAN_EX_MULTITHREADING
-		auto numThreads = std::thread::hardware_concurrency();
-		if (!numThreads)
-			numThreads = 1;
-
 		size_t chunkSize = (end - start) / numThreads;
+		std::vector<std::thread> threads;
 
-		for (unsigned int i = 0; i < numThreads; i++)
-			std::thread(&MemEx::FindCodeCaveImpl, this, std::ref(atomicAddress), std::ref(finishCount), size, start + chunkSize * i, start + chunkSize * (static_cast<size_t>(i) + 1), protection).detach();
+		for (size_t i = 0; i < numThreads; i++)
+			threads.emplace_back(std::thread(&MemEx::FindCodeCaveImpl, this, std::ref(atomicAddress), std::ref(finishCount), size, start + chunkSize * i, start + chunkSize * (static_cast<size_t>(i) + 1), protection));
 
-		while (finishCount.load() != numThreads)
-			Sleep(1);
-
-#else
-		FindCodeCaveImpl(atomicAddress, finishCount, size, start, end, protection);
-#endif	
+		for (auto& thread : threads)
+			thread.join();
 
 		address = atomicAddress.load();
 	}
@@ -663,11 +647,11 @@ uintptr_t MemEx::FindCodeCave(const size_t size, const uint32_t nullByte, const 
 	return address;
 }
 
-uintptr_t MemEx::FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte, const ScanBoundaries& scanBoundaries, size_t* const codeCaveSize, const DWORD protection) const
+uintptr_t MemEx::FindCodeCaveBatch(const size_t size, const std::vector<uint8_t>& nullBytes, uint8_t* const pNullByte, const ScanBoundaries& scanBoundaries, size_t* const codeCaveSize, const DWORD protection, const size_t numThreads) const
 {
 	for (auto nullByte : nullBytes)
 	{
-		auto address = FindCodeCave(size, nullByte, scanBoundaries, codeCaveSize, protection);
+		auto address = FindCodeCave(size, nullByte, scanBoundaries, codeCaveSize, protection, numThreads);
 		if (address)
 		{
 			if (pNullByte)
