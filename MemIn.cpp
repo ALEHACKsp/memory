@@ -432,7 +432,7 @@ bool MemIn::Hook(const uintptr_t address, const void* const callback, uintptr_t*
 	//Jump from hooked function to callback(x32 && !saveCpuStateMask) / buffer(x64)
 	buffer = reinterpret_cast<uint8_t*>(address);
 #ifdef _WIN64
-	PLACE1(0xE9); PLACE4(((!saveCpuStateMask && callbackNearHook) ? reinterpret_cast<ptrdiff_t>(callback) : static_cast<ptrdiff_t>(bufferAddress + 8)) - reinterpret_cast<ptrdiff_t>(buffer + 4));
+	PLACE1(0xE9); PLACE4(((!saveCpuStateMask && callbackNearHook) ? reinterpret_cast<ptrdiff_t>(callback) : static_cast<ptrdiff_t>(bufferAddress)) - reinterpret_cast<ptrdiff_t>(buffer + 4));
 #else
 	PLACE1(0xE9); PLACE4((saveCpuStateMask ? static_cast<ptrdiff_t>(bufferAddress) : reinterpret_cast<ptrdiff_t>(callback)) - reinterpret_cast<ptrdiff_t>(buffer + 4));
 #endif
